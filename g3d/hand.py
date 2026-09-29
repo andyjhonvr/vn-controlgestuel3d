@@ -1,26 +1,14 @@
 """Segmentation de la main et extraction de caractéristiques géométriques.
-
-Itération 1 :
-    1. masque de peau dans l'espace YCrCb (seuils fixes sur Cr et Cb);
-    2. masque d'avant-plan par soustraction d'un fond appris (moyenne glissante);
-    3. ET logique des deux masques, puis ouverture et fermeture morphologiques;
-    4. choix de la main parmi les taches : celle par laquelle le bras entre dans
-       l'image (bord gauche, droit ou bas), sinon la plus proche de la main précédente;
-    5. centre de paume = maximum de la transformée de distance; si le bras entre
-       dans l'image, on prend le premier élargissement avant le poignet, en partant
-       du bout de la main (sinon l'avant-bras peut attirer le point).
-Le fond est mis à jour partout sauf sur la main retenue : une tache parasite
-immobile (le visage, par exemple) finit donc par être absorbée par le fond.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from .config import SegmentationConfig
+from .config import FingerConfig, SegmentationConfig
 
 
 @dataclass
@@ -32,6 +20,10 @@ class HandObservation:
     palm_radius: float                            # px
     bbox: Tuple[int, int, int, int]               # x, y, largeur, hauteur
     arm_entry: Optional[Tuple[float, float]] = None   # où le bras touche le bord de l'image
+    fingers: int = 0                                  # nombre de doigts tendus (0 à 5)
+    finger_valleys: List[Tuple[int, int]] = field(default_factory=list)  # fonds des creux (px)
+    hull: Optional[np.ndarray] = None                 # enveloppe convexe (points)
+    solidity: float = 1.0                             # aire / aire de l'enveloppe (poing ≈ 1)
 
     @property
     def point(self) -> Tuple[float, float]:
@@ -181,8 +173,96 @@ def _palm_center(filled: np.ndarray, cfg: SegmentationConfig):
     return (float(xs[k]), float(ys[k])), float(vals[k]), entry
 
 
+# -------------------------------------------------------------- doigts
+def _angle_at(far, start, end) -> float:
+    """Angle (degrés) au sommet `far` du triangle (start, far, end), par la loi des cosinus."""
+    a = np.linalg.norm(np.subtract(start, end))
+    b = np.linalg.norm(np.subtract(start, far))
+    c = np.linalg.norm(np.subtract(end, far))
+    if b * c == 0:
+        return 180.0
+    cos = np.clip((b ** 2 + c ** 2 - a ** 2) / (2 * b * c), -1.0, 1.0)
+    return float(np.degrees(np.arccos(cos)))
+
+
+def _narrow_protrusions(contour: np.ndarray, center, r: float, cfg: FingerConfig) -> int:
+    """Nombre de protubérances étroites (doigts isolés) hors d'un cercle de rayon ring·r.
+    On parcourt le contour : chaque suite de points « dehors » est une protubérance;
+    sa corde (distance entre son premier et son dernier point) mesure sa largeur."""
+    pts = contour[:, 0, :].astype(np.float32)
+    d = np.linalg.norm(pts - np.array(center, np.float32), axis=1)
+    outside = d > cfg.protrusion_ring * r
+    if outside.all() or not outside.any():
+        return 0
+    start = int(np.argmin(outside))            # un point intérieur : on déroule depuis là
+    pts, d, outside = (np.roll(a, -start, axis=0) for a in (pts, d, outside))
+    count, i, n = 0, 0, len(pts)
+    while i < n:
+        if outside[i]:
+            j = i
+            while j < n and outside[j]:
+                j += 1
+            chord = np.linalg.norm(pts[i] - pts[j - 1])
+            if chord < cfg.protrusion_max_chord * r and d[i:j].max() > cfg.protrusion_min_reach * r:
+                count += 1
+            i = j
+        else:
+            i += 1
+    return count
+
+
+def count_fingers(contour: np.ndarray, palm_center, palm_radius: float,
+                  cfg: FingerConfig | None = None) -> Tuple[int, List[Tuple[int, int]]]:
+    """Nombre de doigts tendus et position des creux entre les doigts.
+
+    Un défaut de convexité (start, end, far, profondeur) est un creux entre deux doigts si :
+      - sa profondeur ≥ min_defect_depth_ratio × rayon de paume (indépendant de l'échelle);
+      - l'angle au fond du creux ≤ max_defect_angle_deg (creux aigu);
+      - ses deux bords (start, end) sont à ≥ tip_min_ratio × r du centre de paume :
+        un creux contre une jointure ou un pouce replié est ignoré.
+    Doigts = nombre de bouts distincts parmi les bords des creux retenus.
+    Sans creux : 0 (poing) ou 1 (protubérance étroite).
+    """
+    cfg = cfg or FingerConfig()
+    r = max(palm_radius, 1.0)
+    hull_idx = cv2.convexHull(contour, returnPoints=False)
+    if hull_idx is None or len(hull_idx) < 4:
+        return 0, []
+    hull_idx = np.sort(hull_idx, axis=0)      # convexityDefects exige des indices croissants
+    try:
+        defects = cv2.convexityDefects(contour, hull_idx)
+    except cv2.error:                          # contour auto-intersecté (rare)
+        defects = None
+
+    center = np.asarray(palm_center, np.float64)
+    valleys, tips = [], []
+    if defects is not None and len(defects) > 0:
+        # Selon la version d'OpenCV, la forme est (N, 1, 4) ou (N, 4) : on uniformise
+        for s_i, e_i, f_i, depth in defects.reshape(-1, 4):
+            start, end, far = contour[s_i][0], contour[e_i][0], contour[f_i][0]
+            if depth / 256.0 < cfg.min_defect_depth_ratio * r:
+                continue
+            if _angle_at(far, start, end) > cfg.max_defect_angle_deg:
+                continue
+            # Les deux bords du creux doivent être des bouts de doigts tendus : un creux
+            # contre une jointure ou un pouce replié ajouterait un doigt fantôme.
+            if min(np.linalg.norm(start - center), np.linalg.norm(end - center)) < cfg.tip_min_ratio * r:
+                continue
+            valleys.append((int(far[0]), int(far[1])))
+            tips.extend([start.astype(np.float64), end.astype(np.float64)])
+    if valleys:
+        # Doigts = bouts distincts (deux creux voisins partagent le bout du doigt du milieu)
+        distinct = []
+        for t in tips:
+            if all(np.linalg.norm(t - u) >= cfg.tip_merge_ratio * r for u in distinct):
+                distinct.append(t)
+        return min(len(distinct), 5), valleys
+    return (1 if _narrow_protrusions(contour, palm_center, r, cfg) > 0 else 0), []
+
+
 def extract_hand(mask: np.ndarray, seg_cfg: SegmentationConfig | None = None,
-                 prev_point: Optional[Tuple[float, float]] = None) -> Optional[HandObservation]:
+                 prev_point: Optional[Tuple[float, float]] = None,
+                 finger_cfg: FingerConfig | None = None) -> Optional[HandObservation]:
     seg_cfg = seg_cfg or SegmentationConfig()
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour = _select_contour(contours, mask.shape, prev_point, seg_cfg)
@@ -196,10 +276,15 @@ def extract_hand(mask: np.ndarray, seg_cfg: SegmentationConfig | None = None,
     filled = np.zeros_like(mask)
     cv2.drawContours(filled, [contour], -1, 255, cv2.FILLED)
     center, radius, entry = _palm_center(filled, seg_cfg)
+    fingers, valleys = count_fingers(contour, center, radius, finger_cfg)
+    hull = cv2.convexHull(contour)
+    hull_area = cv2.contourArea(hull)
 
     return HandObservation(contour=contour, area=area, centroid=centroid,
                            palm_center=center, palm_radius=radius,
-                           bbox=cv2.boundingRect(contour), arm_entry=entry)
+                           bbox=cv2.boundingRect(contour), arm_entry=entry,
+                           fingers=fingers, finger_valleys=valleys, hull=hull,
+                           solidity=area / hull_area if hull_area > 0 else 1.0)
 
 
 def hand_protect_mask(shape, obs: Optional[HandObservation], kernel_px: int = 15) -> Optional[np.ndarray]:
@@ -217,6 +302,10 @@ def hand_protect_mask(shape, obs: Optional[HandObservation], kernel_px: int = 15
 def draw_hand(img: np.ndarray, obs: HandObservation) -> np.ndarray:
     out = img.copy()
     cv2.drawContours(out, [obs.contour], -1, (0, 255, 0), 2)
+    if obs.hull is not None:
+        cv2.drawContours(out, [obs.hull], -1, (255, 200, 0), 1)          # enveloppe convexe
+    for v in obs.finger_valleys:
+        cv2.circle(out, v, 6, (255, 0, 255), -1)                           # creux (magenta)
     cx, cy = map(int, obs.palm_center)
     cv2.circle(out, (cx, cy), int(obs.palm_radius), (0, 0, 255), 1)
     cv2.circle(out, (cx, cy), 5, (0, 0, 255), -1)

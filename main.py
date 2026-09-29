@@ -1,8 +1,4 @@
-"""Itération 1 — « Je vois ma main ».
-
-    python main.py            # webcam 0
-    python main.py --cam 1
-
+"""
 Au démarrage, gardez la main hors du champ pendant ~1 s (apprentissage du fond).
 Touches : b = réapprendre le fond (main HORS du champ), d = afficher/masquer le masque,
           m = diagnostic (peau, avant-plan, final), q = quitter.
@@ -51,7 +47,7 @@ def main():
             break
         # Calculs sur l'image brute; le miroir sert seulement à l'affichage
         mask = seg.segment(frame)
-        obs = extract_hand(mask, cfg.seg, prev_point)
+        obs = extract_hand(mask, cfg.seg, prev_point, cfg.fingers)
         prev_point = obs.point if obs is not None else None
         seg.update_background(hand_protect_mask(mask.shape, obs))
 
@@ -61,7 +57,9 @@ def main():
             txt = "apprentissage du fond... retirez la main"
         elif obs is not None:
             bras = "oui" if obs.arm_entry is not None else "non"
-            txt = f"main : aire={obs.area:.0f} px2  rayon paume={obs.palm_radius:.0f} px  bras={bras}"
+            forme = "POING" if obs.fingers == 0 else ("OUVERTE" if obs.fingers >= 4 else "autre")
+            txt = (f"doigts : {obs.fingers} ({forme})  solidite={obs.solidity:.2f}  "
+                   f"r={obs.palm_radius:.0f} px  bras={bras}")
         else:
             txt = "aucune main"
         cv2.putText(vis, txt, (10, vis.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)

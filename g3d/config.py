@@ -1,7 +1,5 @@
-"""Paramètres du système. Tous les seuils sont regroupés ici pour être
-faciles à justifier dans le rapport et à ajuster lors des essais."""
+"""Paramètres du système. Tous les seuils sont regroupés ici pour ajuster lors des essais."""
 from dataclasses import dataclass, field
-
 
 @dataclass
 class SegmentationConfig:
@@ -30,5 +28,22 @@ class SegmentationConfig:
 
 
 @dataclass
+class FingerConfig:
+    # Creux entre deux doigts = défaut de convexité profond et aigu
+    max_defect_angle_deg: float = 90.0    # angle max. au fond du creux (loi des cosinus)
+    min_defect_depth_ratio: float = 0.15  # profondeur min. du creux / rayon de paume
+    # Un creux ne compte que si ses DEUX bords sont des bouts de doigts tendus, loin de la
+    # paume; une jointure ou un pouce replié reste près de la paume (≈ 1,3 r).
+    tip_min_ratio: float = 1.7            # distance min. bout de doigt – centre de paume / r
+    tip_merge_ratio: float = 0.5          # deux bouts plus proches que 0,5 r = le même doigt
+    # Sans aucun creux : un doigt isolé est une protubérance ÉTROITE qui sort d'un
+    # cercle de protrusion_ring × r; le poignet, large, n'est pas compté.
+    protrusion_ring: float = 1.6
+    protrusion_max_chord: float = 0.9     # largeur max. d'un doigt au passage du cercle / r
+    protrusion_min_reach: float = 2.0     # le doigt doit atteindre au moins 2 r du centre
+
+
+@dataclass
 class Config:
     seg: SegmentationConfig = field(default_factory=SegmentationConfig)
+    fingers: FingerConfig = field(default_factory=FingerConfig)
