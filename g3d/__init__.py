@@ -1,0 +1,1 @@
+"""Contrôle gestuel avec commande de profondeur 3D — GIF-7001."""
