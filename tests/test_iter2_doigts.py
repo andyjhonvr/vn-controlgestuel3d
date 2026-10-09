@@ -113,5 +113,7 @@ if __name__ == "__main__":
             cv2.imwrite(f"results/synth_main_{i}_{att}.png", main_synthetique(tendus))
     print("Comptage des doigts (mains synthétiques avec doigts repliés) :")
     ex, cl = evaluer()
-    assert ex >= 0.95 and cl == 1.0, "comptage insuffisant"
+    
+    assert ex >= 0.95, "précision insuffisante"
+    assert cl == 1.0, "classes utiles incorrectes"
     print("OK")
