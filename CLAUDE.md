@@ -2,14 +2,6 @@
 
 > Mémoire du projet pour Claude Code. Ce fichier résume tout le travail fait jusqu'ici, les décisions prises et la suite. **Le code actuel est dans ce dépôt : lis-le avant de proposer des changements.**
 
----
-
-## 1. Qui nous sommes et ce que nous attendons de toi
-
-Nous sommes une équipe de 5 étudiants du cours **GIF-7001 Vision numérique (Université Laval, automne 2026)**. Le responsable technique est Andy Vasquez Ramos. Nous construisons un système qui pilote un lecteur vidéo par gestes de la main, avec une **profondeur réelle de la main mesurée par triangulation stéréoscopique**. Agis comme ingénieur principal en vision numérique et comme soutien technique de l'équipe.
-
-**Langue :** tout est en **français** : réponses, code, docstrings, commentaires, messages de commit, rapport et vidéo.
-
 **Façon de travailler (obligatoire) :**
 1. On travaille **par itérations**. Tu n'implémentes l'itération N que lorsqu'on te dit « donne-moi l'itération N ».
 2. **Tu modifies les fichiers directement dans le dépôt** et tu montres les diffs pour qu'on les accepte. Avant de modifier, tu indiques en 2 ou 3 lignes quels fichiers tu vas toucher et pourquoi.
@@ -91,13 +83,6 @@ Une **version de référence complète** a été développée dans une conversat
 | Triangulation (30 → 80 cm) | Z stéréo 0,34 → 2,41 cm; mono 2,65 → 7,43 cm |
 | Gestes (100 essais) | Balayages 100 % (200 ms); pause 100 % (800 ms); balayage + retour 99 % (22 fausses détections sans anti-retour); volume stéréo 67,8 ± 1,0 %, mono 68,7 ± 3,9 % |
 
-**Documents déjà produits (à ranger dans `docs/`) :**
-- Rapport préliminaire (Word, 10 pages, 8 figures). Il manque le lien de la vidéo.
-- Backlog de 30 histoires utilisateur (Word).
-- Prompt maître du projet (Markdown pour Notion).
-- Plan des itérations (Word).
-- Diagrammes d'activité (démarrage, boucle par image, règles du moteur).
-
 **À propos du comptage des doigts :** il sert à lire l'*intention* de la main, et non sa position.
 - Le **poing** est « l'embrayage » du volume : le volume ne bouge que tant que le poing est fermé.
 - La **main ouverte** rend la pause possible.
@@ -112,9 +97,9 @@ Une **version de référence complète** a été développée dans une conversat
 |---|---|---|---|
 | 1 | Je vois ma main | Contour, centre de paume et entrée du bras qui suivent la main; le visage disparaît | ✅ Terminée |
 | 2 | Je compte les doigts | 0 à 5 doigts à l'écran, creux marqués, poing = 0 | 🔎 Implémentée; **validation avec la webcam en cours** |
-| 3 | Je contrôle une vidéo (MVP) | Balayage = ±10 s, main ouverte immobile = pause | ⏭️ **Suivante** |
-| 4 | Volume par la profondeur (mono) | Approcher le poing fait monter le volume | À faire |
-| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | À faire |
+| 3 | Je contrôle une vidéo (MVP) | Balayage = ±10 s, main ouverte immobile = pause | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 4 | Volume par la profondeur (mono) | Approcher le poing fait monter le volume | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | ⏭️ **Suivante** |
 | 6 | Zone de contrôle | Feuille lettre cliquée; rien ne se déclenche hors de la zone | À faire |
 | 7 | Étalonnage | Damier, K, RMS < 0,5 px; Z mono avec la vraie focale | À faire |
 | 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | À faire (après les sem. 11–13) |
@@ -130,11 +115,25 @@ Une **version de référence complète** a été développée dans une conversat
 - **Corrigé (webcam : 4 → 5, 3 → 4) :** filtre des bouts de doigts. `tests/test_iter2_doigts.py` (160 mains avec doigts et pouce repliés) : 80,0 % → 99,4 % exact; conditions difficiles (bords bruités, doigts serrés) : 78,9 % → 91,4 % exact, classes utiles 86,7 % → 99,2 %.
 - **Reste à faire :** confirmer avec la webcam et noter la solidité observée avec le poing et avec la main ouverte.
 
-**Itération 3 (suivante) :**
-- `g3d/gestures.py` : `Sample`, `Event` et `GestureEngine`, avec balayage, main ouverte immobile (sans réarmement pour l'instant) et délai de 1 s. `mirror=True`.
-- `g3d/player.py` : `VideoPlayer`, avec vidéo réelle ou synthétique, `handle(event)` et surimpression.
-- `main.py` : intègre le moteur et le lecteur, et affiche chaque événement avec sa raison.
-- Anti-retour, réarmement, volume et CSV arrivent aux itérations 4 et 5.
+**Itération 3 (implémentée) :**
+- `g3d/gestures.py` : `Sample(t, x, y, fingers, z_cm, in_zone)`, `Event(kind, t, value, reason)` et `GestureEngine(frame_width, cfg)`. Ordre : reset → volume → délai de 1 s → balayage → main ouverte immobile. `mirror=True` : une main qui va vers la gauche de l'image brute est un balayage **droite** à l'écran (+10 s).
+- Main ouverte immobile : ≥ 4 doigts sur toute la fenêtre de 0,8 s, et écart max. à la position médiane ≤ 15 px. **Verrou simple** (le réarmement complet viendra à l'itération 5) : après une pause, il faut un poing ou un déplacement de plus de 45 px.
+- `g3d/player.py` : `VideoPlayer(path)` lit une vraie vidéo (`--video`) ou une vidéo synthétique de 3 min (horloge et disque qui fait un tour toutes les 10 s). Le volume est une barre, car OpenCV ne joue pas le son. Touche espace = lecture / pause manuelle.
+- `main.py` : fenêtres « Camera » et « Lecteur »; chaque événement est affiché avec sa raison et imprimé dans le terminal.
+- `tests/test_iter3_gestes.py` (12 scénarios × 100 essais, 30 im/s, bruit de 2 à 3 px) : 100 % partout. Délais : balayage de 0,3 s → 140 ms, pause → 833 ms. Aucune fausse détection pour un mouvement lent (2 s), une diagonale, une dérive de 60 px/s, un poing ou 3 doigts.
+- Limite connue de la règle : une dérive lente (moins de ≈ 35 px/s) compte comme immobile, et un mouvement ample de 1,5 s peut atteindre 25 % de la largeur en 0,5 s.
+
+**Itération 4 (implémentée) :**
+- `g3d/depth.py` : `mono_depth_cm(r_px) = f · R / r`, avec `DepthConfig` : `focal_px=500` (provisoire jusqu'à l'itération 7) et `palm_radius_cm=4.0`.
+- Volume dans `GestureEngine` : le poing (0 doigt) sert d'embrayage; tolérance de 5 images; Z₀ = première médiane de 9 valeurs; volume = V₀ + 2 %/cm × (ΔZ moins 1 cm de zone morte **continue**); hystérésis de 2 %; bornes 0–100 %. Pendant la prise du poing, aucun balayage ni aucune pause; le poing réarme la pause.
+- `tests/test_iter4_volume.py` :
+  - Z mono sur des poings synthétiques (30 → 80 cm) : biais brut de −6 à −7 % (f et R sont provisoires); après étalonnage en un point, erreur ≤ 0,44 cm.
+  - Volume 50 → 40 cm (attendu 68 %) : 67,6 ± 0,8 % (σ_Z = 0,5 cm), 68,2 ± 1,9 % (1,5 cm), 68,4 ± 3,9 % (3 cm). Sans filtres : 62 événements au lieu de 7.
+  - Poing immobile pendant 3 s : volume modifié dans 0/100 essais (σ = 0,5 cm), 1/100 (1 cm), 28/100 (1,5 cm).
+  - Chaîne complète image → volume : 65,2 % (attendu 68 %), à cause du biais de f.
+- **Reste à faire (webcam) :** noter le bruit de Z avec le poing immobile; si le volume tremble, augmenter `volume_dead_zone_cm` (1,5 cm → 9/100 à σ = 1,5 cm).
+
+**Itération 5 (suivante) :** anti-retour de 2,5 s, réarmement complet (après un balayage, seulement si la main se ferme), tolérance aux images sans main, CSV des raisons (`results/events_log.csv`).
 
 ---
 
@@ -149,6 +148,8 @@ Une **version de référence complète** a été développée dans une conversat
 | Pause parasite après un balayage | Main ouverte immobile à la fin du balayage | Réarmement seulement quand la main se ferme |
 | Volume qui tremble ou biaisé | Bruit sur Z et erreurs de comptage | Médiane de 9, hystérésis de 2 %, tolérance de 5 images |
 | Un doigt de trop (4 → 5, 3 → 4, poing → 3) | Le creux entre un doigt tendu et une jointure ou le pouce replié comptait (« n creux → n + 1 ») | Les deux bords du creux doivent être à ≥ 1,7 r de la paume; on compte les bouts distincts. 80 % → 99,4 % |
+| La pause ne se réarmait jamais après un poing | Pendant la prise du poing, le moteur sortait avant de déverrouiller la pause | Déverrouillage avant la règle du volume. 0/100 → 100/100 |
+| Volume qui bouge avec un poing immobile (98/100 essais à σ_Z = 1,5 cm) | Zone morte « sèche » : au premier dépassement de 1 cm, la cible sautait de ±2 % (= l'hystérésis) | Zone morte continue (on retranche 1 cm de ΔZ) : 98/100 → 28/100 à σ = 1,5 cm, 1/100 à σ = 1 cm |
 | Plantage `cannot unpack non-iterable numpy.int32` | `convexityDefects` renvoie `(N,4)` selon la version d'OpenCV | `defects.reshape(-1, 4)` |
 
 ---

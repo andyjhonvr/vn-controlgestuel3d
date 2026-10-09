@@ -44,6 +44,50 @@ class FingerConfig:
 
 
 @dataclass
+class GestureConfig:
+    mirror: bool = True                   # sens des balayages tel que vu à l'écran (miroir)
+    cooldown_s: float = 1.0               # délai après un balayage ou une pause
+    # Balayage : |Δx| ≥ 25 % de la largeur en ≤ 0,5 s, avec |Δy| ≤ 0,5 |Δx|
+    swipe_min_dx_ratio: float = 0.25
+    swipe_max_duration_s: float = 0.5
+    swipe_max_dy_ratio: float = 0.5
+    seek_step_s: float = 10.0
+    # Main ouverte immobile : ≥ 4 doigts, déplacement ≤ 15 px pendant 0,8 s
+    open_min_fingers: int = 4
+    still_max_px: float = 15.0
+    still_duration_s: float = 0.8
+    # Verrou simple (le réarmement complet arrive à l'itération 5) : après une pause,
+    # la main doit se fermer ou bouger de plus de 45 px avant une nouvelle pause.
+    pause_rearm_px: float = 45.0
+    # Volume : poing = embrayage; volume = V₀ + gain × (Z₀ − Z), moins la zone morte
+    volume_gain_pct_per_cm: float = 2.0
+    volume_median_n: int = 9              # médiane glissante sur Z
+    volume_dead_zone_cm: float = 1.0      # on retranche 1 cm de |Z₀ − Z| (continu)
+    volume_hysteresis_pct: float = 2.0    # on n'applique un changement que s'il est ≥ 2 %
+    fist_tolerance_frames: int = 5        # images « pas poing » tolérées avant de lâcher
+    volume_initial_pct: float = 50.0
+
+
+@dataclass
+class DepthConfig:
+    # Profondeur monoculaire par le modèle sténopé : Z = f · R_réel / r_image.
+    # f provisoire (webcam 640 px, champ horizontal ≈ 65°) : remplacée à l'itération 7.
+    focal_px: float = 500.0
+    palm_radius_cm: float = 4.0           # rayon du disque inscrit dans la paume / le poing
+
+
+@dataclass
+class PlayerConfig:
+    synthetic_duration_s: float = 180.0   # durée de la vidéo synthétique (sans --video)
+    width: int = 640
+    height: int = 360
+    message_s: float = 2.0                # durée d'affichage du dernier événement
+
+
+@dataclass
 class Config:
     seg: SegmentationConfig = field(default_factory=SegmentationConfig)
     fingers: FingerConfig = field(default_factory=FingerConfig)
+    gestures: GestureConfig = field(default_factory=GestureConfig)
+    depth: DepthConfig = field(default_factory=DepthConfig)
+    player: PlayerConfig = field(default_factory=PlayerConfig)
