@@ -44,8 +44,10 @@ class Event:
 
 
 class GestureEngine:
-    def __init__(self, frame_width: int, cfg: GestureConfig | None = None):
+    def __init__(self, frame_width: int, cfg: GestureConfig | None = None,
+                 *, volume_enabled: bool = True):
         self.cfg = cfg or GestureConfig()
+        self.volume_enabled = volume_enabled
         self.width = frame_width
         self.volume = self.cfg.volume_initial_pct
         self.cooldown_until = -np.inf
@@ -87,10 +89,15 @@ class GestureEngine:
             self._update_latch(s)                         # le poing réarme aussi la pause
 
         # 2. volume : prioritaire et sans délai; pendant la prise, rien d'autre
-        ev = self._volume(s)
-        if self.gripping:
+        if self.volume_enabled:
+            ev = self._volume(s)
+            if self.gripping:
+                self.history.clear()
+                return ev
+        elif s.fingers == 0:
+            # Itération 3 : le poing réarme la pause, sans commande ni trajectoire.
             self.history.clear()
-            return ev
+            return None
 
         self._push(s)
 

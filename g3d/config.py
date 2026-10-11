@@ -16,9 +16,9 @@ class SegmentationConfig:
     # Morphologie et filtrage du contour
     morph_kernel: int = 5               # taille du noyau elliptique (px)
     min_hand_area_ratio: float = 0.01   # aire minimale de la main / aire de l'image
-    # Choix de la main parmi les taches de peau : on préfère celle qui touche le bord
-    # gauche, droit ou bas de l'image (le bras y entre); le visage, lui, n'y touche pas.
-    track_max_jump_ratio: float = 0.25  # saut max. du centre de paume entre deux images / largeur
+    # La silhouette DOIT toucher le bord gauche, droit ou bas via l'avant-bras.
+    # Une tache flottante (ex. visage en mouvement) n'est jamais une main candidate.
+    track_max_jump_ratio: float = 0.25  # distance max. ancien centre / nouveau contour, rapportée à la largeur
     # Centre de paume quand le bras entre dans l'image : on parcourt la silhouette depuis
     # le bout de la main vers le bras; la paume est le premier élargissement suivi d'un
     # rétrécissement (le poignet) d'au moins wrist_dip_ratio.
