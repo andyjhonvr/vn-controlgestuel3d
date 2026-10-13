@@ -105,7 +105,35 @@ Une **version de référence complète** a été développée dans une conversat
 | 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | À faire (après les sem. 11–13) |
 | 9 | Expériences et figures | `run_all.py` régénère les 7 figures + `summary.json` | En parallèle |
 
+**Mode de démonstration de l'itération 1 :**
+Correction de la sélection du visage en mouvement : `_select_contour` exige
+désormais une liaison au bord gauche/droit/bas à chaque image; suppression du
+repli sur la plus grande tache et du suivi des taches flottantes. La distance
+maximale de suivi s'applique aussi aux candidats reliés au bord. Si aucun candidat
+valide n'existe, `None` réinitialise les gestes via la boucle existante.
+`tests/test_iter1_visage.py` : sur 120 scènes, visage seul et visage proche de
+l'ancien point sélectionnés 120/120 avant → 0/120 après; main + visage correctement
+suivis 120/120 avant et après; retrait de main correctement reconnu 0/120 → 120/120.
+Chaîne couleur/fond/gestes : visage mobile visible dans le masque sur 90 images,
+mais 0 main sélectionnée et 0 commande après correction. Comptage : 159/160,
+classes utiles 100 %; tests de volume : OK. Validation webcam restant à faire.
+Limite : avant-bras continu jusqu'au bord nécessaire; la règle ne sépare pas une
+silhouette fusionnée main/visage et n'identifie pas un visage touchant un bord admis.
+
+Avant les validations suivantes, on peut maintenant filmer l'itération 1 seule :
+clic droit sur `iteration1.py` dans PyCharm → Run, ou `python main.py --iteration 1`.
+Ce mode conserve la segmentation, la paume et l'entrée du bras, sans comptage des
+doigts, profondeur, moteur de gestes ni lecteur. `main.py` sans option reste complet.
+Validation du mode isolé : masque synthétique, géométrie identique au mode complet,
+absence d'appels aux fonctions désactivées, touches et fermeture testées avec caméra
+simulée. Tests existants 2, 3 et 4 : OK sous Python 3.10 avec `-X utf8` sous Windows.
+La validation visuelle du nouveau mode à la webcam reste à faire par l'utilisateur.
+
 **Itération 2 (implémentée) :**
+- Mode isolé : lancer `tests/iteration2.py` dans PyCharm ou `python main.py --iteration 2`.
+  Affiche le comptage, les classes, la solidité et les creux, sans lecteur, gestes ni Z.
+  Modes 1, 2 et mode complet vérifiés avec caméra simulée (touches et fermeture incluses).
+  Test synthétique des doigts : 159/160 exact, classes utiles 100 %; validation webcam à faire.
 - `FingerConfig` : `max_defect_angle_deg=90`, `min_defect_depth_ratio=0.15`, `protrusion_ring=1.6`, `protrusion_max_chord=0.9`, `protrusion_min_reach=2.0`.
 - `count_fingers` : un creux est un défaut de convexité de profondeur ≥ 0,15 r et d'angle ≤ 90°, **dont les deux bords sont à ≥ 1,7 r du centre de paume** (`tip_min_ratio`); doigts = bouts distincts (fusion à 0,5 r, `tip_merge_ratio`). Sans creux, une protubérance étroite compte pour 1 doigt; sinon, c'est un poing (0).
 - `HandObservation` contient `fingers`, `finger_valleys`, `hull` et `solidity`. `main.py` affiche `doigts : n (POING/OUVERTE/autre)` et la solidité.
@@ -116,6 +144,16 @@ Une **version de référence complète** a été développée dans une conversat
 - **Reste à faire :** confirmer avec la webcam et noter la solidité observée avec le poing et avec la main ouverte.
 
 **Itération 3 (implémentée) :**
+- Mode isolé : `tests/iteration3.py` dans PyCharm, ou `python main.py --iteration 3`.
+  Suivi, doigts, lecture/pause et balayages actifs; calcul de Z, commande de volume
+  et barre de volume désactivés. Le poing reste neutre et réarme la pause.
+  `GestureEngine(..., volume_enabled=False)` saute entièrement `_volume` et vide
+  la trajectoire lorsque le poing est fermé. `VideoPlayer(..., show_volume=False)`
+  masque la barre. Les valeurs par défaut préservent le mode complet.
+  Validation sans webcam : 12 scénarios × 100 essais passent avec le volume désactivé;
+  balayage 0,3 s = 140 ms et pause = 833 ms, comme avant. Poing mobile sans commande,
+  affichage et touches des modes 1 à 4, options du lanceur vérifiés. Tests de volume
+  de l'itération 4 : OK. Validation visuelle du mode 3 à faire par l'utilisateur.
 - `g3d/gestures.py` : `Sample(t, x, y, fingers, z_cm, in_zone)`, `Event(kind, t, value, reason)` et `GestureEngine(frame_width, cfg)`. Ordre : reset → volume → délai de 1 s → balayage → main ouverte immobile. `mirror=True` : une main qui va vers la gauche de l'image brute est un balayage **droite** à l'écran (+10 s).
 - Main ouverte immobile : ≥ 4 doigts sur toute la fenêtre de 0,8 s, et écart max. à la position médiane ≤ 15 px. **Verrou simple** (le réarmement complet viendra à l'itération 5) : après une pause, il faut un poing ou un déplacement de plus de 45 px.
 - `g3d/player.py` : `VideoPlayer(path)` lit une vraie vidéo (`--video`) ou une vidéo synthétique de 3 min (horloge et disque qui fait un tour toutes les 10 s). Le volume est une barre, car OpenCV ne joue pas le son. Touche espace = lecture / pause manuelle.
@@ -124,6 +162,14 @@ Une **version de référence complète** a été développée dans une conversat
 - Limite connue de la règle : une dérive lente (moins de ≈ 35 px/s) compte comme immobile, et un mouvement ample de 1,5 s peut atteindre 25 % de la largeur en 0,5 s.
 
 **Itération 4 (implémentée) :**
+- Lanceur de démonstration : `tests/iteration4.py`, avec le même principe que les
+  lanceurs précédents. Force `--iteration 4` et transmet `--cam` / `--video`.
+  Active les fonctions cumulées 1 à 4; aucune modification des algorithmes.
+  Affiche Z, la prise du poing et la barre de volume (sans son). Le volume initial
+  est de 50 % à chaque lancement; `b` ne le réinitialise pas.
+  Vérification : lancement depuis `tests` et transmission des options OK;
+  `test_iter4_volume.py` OK (68,2 ± 1,9 % à sigma Z = 1,5 cm, chaîne complète
+  65,2 % comme précédemment). La validation webcam reste à faire.
 - `g3d/depth.py` : `mono_depth_cm(r_px) = f · R / r`, avec `DepthConfig` : `focal_px=500` (provisoire jusqu'à l'itération 7) et `palm_radius_cm=4.0`.
 - Volume dans `GestureEngine` : le poing (0 doigt) sert d'embrayage; tolérance de 5 images; Z₀ = première médiane de 9 valeurs; volume = V₀ + 2 %/cm × (ΔZ moins 1 cm de zone morte **continue**); hystérésis de 2 %; bornes 0–100 %. Pendant la prise du poing, aucun balayage ni aucune pause; le poing réarme la pause.
 - `tests/test_iter4_volume.py` :
@@ -138,6 +184,29 @@ Une **version de référence complète** a été développée dans une conversat
 ---
 
 ## 6. Problèmes déjà résolus (à ne pas répéter)
+
+- Lancement séparé de l'itération 4 dans PyCharm : ajout de `tests/iteration4.py`,
+  utilisant le mode complet existant, sans copie des calculs ou des réglages.
+
+- Visage mobile repris comme main après perte du bras : le repli sur la plus
+  grande tache et le suivi sans liaison au bord étaient encore actifs. Tous les
+  candidats doivent désormais toucher un bord d'entrée de bras; sinon aucune
+  observation n'est envoyée. Le masque brut de peau/mouvement peut encore montrer
+  le visage sans qu'il soit sélectionné. Régression : `tests/test_iter1_visage.py`.
+
+- Le volume et la profondeur gênaient la démonstration de l'itération 3 : lanceur
+  `tests/iteration3.py` et option `--iteration 3`, avec désactivation du calcul de
+  profondeur et du moteur de volume, et masquage de la barre du lecteur.
+
+- Les commandes de lecture et de volume gênaient les essais de comptage : mode
+  `--iteration 2` et lanceur `tests/iteration2.py`, sans instanciation du lecteur
+  ou du moteur de gestes et sans calcul de profondeur. Le lanceur retrouve la
+  racine du projet même lorsqu'il est exécuté depuis le dossier `tests`.
+
+- Démonstration de l'itération 1 encombrée par les autres fonctions : ajout du
+  lanceur `iteration1.py` et de l'option `--iteration 1`; aucune commande du lecteur
+  n'est exécutée dans ce mode. Si le suivi échoue, réapprendre le fond avec `b`,
+  main hors champ, et faire entrer l'avant-bras par le bas ou un côté.
 
 | Symptôme | Cause | Solution |
 |---|---|---|

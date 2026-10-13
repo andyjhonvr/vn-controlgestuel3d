@@ -25,8 +25,9 @@ def _fmt(t: float) -> str:
 
 class VideoPlayer:
     def __init__(self, path: Optional[str] = None, cfg: PlayerConfig | None = None,
-                 volume: float = 50.0, clock=time.monotonic):
+                 volume: float = 50.0, clock=time.monotonic, *, show_volume: bool = True):
         self.cfg = cfg or PlayerConfig()
+        self.show_volume = show_volume
         self.clock = clock
         self.cap = None
         self.fps = 30.0
@@ -117,12 +118,13 @@ class VideoPlayer:
         cv2.putText(img, f"{etat}  {_fmt(p)} / {_fmt(self.duration)}", (10, h - 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         # barre de volume (verticale, à droite)
-        top, bot = 20, h - 50
-        cv2.rectangle(img, (w - 30, top), (w - 14, bot), (80, 80, 80), -1)
-        cv2.rectangle(img, (w - 30, bot - int((bot - top) * self.volume / 100)), (w - 14, bot),
-                      (0, 220, 0), -1)
-        cv2.putText(img, f"{self.volume:.0f}%", (w - 70, top + 12), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (255, 255, 255), 1)
+        if self.show_volume:
+            top, bot = 20, h - 50
+            cv2.rectangle(img, (w - 30, top), (w - 14, bot), (80, 80, 80), -1)
+            cv2.rectangle(img, (w - 30, bot - int((bot - top) * self.volume / 100)), (w - 14, bot),
+                          (0, 220, 0), -1)
+            cv2.putText(img, f"{self.volume:.0f}%", (w - 70, top + 12), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5, (255, 255, 255), 1)
         # dernier événement
         if self.clock() < self._msg_until:
             cv2.putText(img, self._msg, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)

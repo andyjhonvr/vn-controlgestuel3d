@@ -7,6 +7,7 @@ Gestes : balayage gauche / droite = ∓10 s; main ouverte immobile 0,8 s = lectu
 Touches : b = réapprendre le fond (main HORS du champ), d = afficher/masquer le masque,
           m = diagnostic (peau, avant-plan, final), espace = lecture / pause, q = quitter.
 Options : --cam N (caméra), --video fichier.mp4 (sinon vidéo synthétique).
+          --iteration 1 (détection), 2 (doigts), 3 (lecture), 4 (volume, défaut).
 """
 import argparse
 import time
@@ -33,11 +34,16 @@ def diagnostic_mosaic(seg: HandSegmenter, final_mask: np.ndarray) -> np.ndarray:
     return np.hstack(panels)
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--cam", type=int, default=0)
     ap.add_argument("--video", default=None, help="vidéo à piloter (sinon vidéo synthétique)")
-    args = ap.parse_args()
+    ap.add_argument("--iteration", type=int, choices=(1, 2, 3, 4), default=4,
+                    help="1 : détection; 2 : doigts; 3 : lecture et balayages; 4 : toutes les fonctions (défaut)")
+    args = ap.parse_args(argv)
+    detection_only = args.iteration == 1
+    gestures_enabled = args.iteration >= 3
+    volume_enabled = args.iteration == 4
 
     cfg = Config()
     cap = cv2.VideoCapture(args.cam)
@@ -48,7 +54,9 @@ def main():
 
     seg = HandSegmenter(cfg.seg)
     engine = None                                # créé à la 1re image (largeur connue)
-    player = VideoPlayer(args.video, cfg.player, volume=cfg.gestures.volume_initial_pct)
+    player = (VideoPlayer(args.video, cfg.player, volume=cfg.gestures.volume_initial_pct,
+                          show_volume=volume_enabled)
+              if gestures_enabled else None)
     last_reason = ""
     show_mask, show_diag = True, False
     prev_point = None
@@ -60,22 +68,25 @@ def main():
             break
         # Calculs sur l'image brute; le miroir sert seulement à l'affichage
         mask = seg.segment(frame)
-        obs = extract_hand(mask, cfg.seg, prev_point, cfg.fingers)
+        obs = extract_hand(mask, cfg.seg, prev_point, cfg.fingers,
+                           analyze_fingers=not detection_only)
         prev_point = obs.point if obs is not None else None
         seg.update_background(hand_protect_mask(mask.shape, obs))
 
         # Main → échantillon → moteur de gestes → lecteur
-        if engine is None:
-            engine = GestureEngine(frame.shape[1], cfg.gestures)
-        z = mono_depth_cm(obs.palm_radius, cfg.depth) if obs is not None else None
-        sample = None
-        if obs is not None and not seg.warming_up:
-            sample = Sample(time.monotonic(), obs.point[0], obs.point[1], obs.fingers, z)
-        event = engine.update(sample)
-        if event is not None:
-            player.handle(event)
-            last_reason = str(event)
-            print(last_reason)
+        if gestures_enabled:
+            if engine is None:
+                engine = GestureEngine(frame.shape[1], cfg.gestures, volume_enabled=volume_enabled)
+            z = (mono_depth_cm(obs.palm_radius, cfg.depth)
+                 if volume_enabled and obs is not None else None)
+            sample = None
+            if obs is not None and not seg.warming_up:
+                sample = Sample(time.monotonic(), obs.point[0], obs.point[1], obs.fingers, z)
+            event = engine.update(sample)
+            if event is not None:
+                player.handle(event)
+                last_reason = str(event)
+                print(last_reason)
 
         vis = draw_hand(frame, obs) if obs is not None else frame.copy()
         vis = cv2.flip(vis, 1)
@@ -83,10 +94,16 @@ def main():
             txt = "apprentissage du fond... retirez la main"
         elif obs is not None:
             bras = "oui" if obs.arm_entry is not None else "non"
-            forme = "POING" if obs.fingers == 0 else ("OUVERTE" if obs.fingers >= 4 else "autre")
-            txt = (f"doigts : {obs.fingers} ({forme})  solidite={obs.solidity:.2f}  "
-                   f"r={obs.palm_radius:.0f} px  Z={z:.0f} cm  bras={bras}")
-            if engine.gripping:
+            if detection_only:
+                txt = f"Iteration 1 : main detectee  r={obs.palm_radius:.0f} px  bras={bras}"
+            else:
+                forme = "POING" if obs.fingers == 0 else ("OUVERTE" if obs.fingers >= 4 else "autre")
+                txt = (f"doigts : {obs.fingers} ({forme})  solidite={obs.solidity:.2f}  "
+                       f"r={obs.palm_radius:.0f} px  ")
+                if volume_enabled:
+                    txt += f"Z={z:.0f} cm  "
+                txt += f"bras={bras}"
+            if engine is not None and engine.gripping:
                 zf = f"{engine.z_filtered:.1f} cm" if engine.z_filtered is not None else "..."
                 cv2.putText(vis, f"VOLUME (poing) Z={zf}  vol={engine.volume:.0f} %", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -97,7 +114,8 @@ def main():
             cv2.putText(vis, last_reason[:95], (10, vis.shape[0] - 36), cv2.FONT_HERSHEY_SIMPLEX,
                         0.4, (0, 255, 255), 1)
         cv2.imshow("Camera", vis)
-        cv2.imshow("Lecteur", player.render())
+        if player is not None:
+            cv2.imshow("Lecteur", player.render())
         if show_mask:
             cv2.imshow("Masque", cv2.flip(mask, 1))
         if show_diag:
@@ -106,7 +124,7 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
-        if key == ord(" "):
+        if key == ord(" ") and player is not None:
             player.toggle()
         if key == ord("b"):
             seg.reset_background()
@@ -122,7 +140,8 @@ def main():
                 cv2.destroyWindow("Diagnostic")
 
     cap.release()
-    player.release()
+    if player is not None:
+        player.release()
     cv2.destroyAllWindows()
 
 

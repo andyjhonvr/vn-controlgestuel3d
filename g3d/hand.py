@@ -104,27 +104,23 @@ def _touches_arm_border(contour: np.ndarray, shape) -> bool:
 
 def _select_contour(contours, shape, prev_point, cfg: SegmentationConfig):
     min_area = cfg.min_hand_area_ratio * shape[0] * shape[1]
-    cands = [c for c in contours if cv2.contourArea(c) >= min_area]
+    # La couleur et le mouvement ne distinguent pas une main d'un visage.
+    # Exiger l'entree du bras a CHAQUE image, y compris pendant le suivi.
+    # Sans cette preuve, ne transmettre aucune observation au moteur de gestes.
+    cands = [c for c in contours if cv2.contourArea(c) >= min_area
+             and _touches_arm_border(c, shape)]
     if not cands:
         return None
-    max_jump = cfg.track_max_jump_ratio * shape[1]
+    if prev_point is None:
+        return max(cands, key=cv2.contourArea)
 
     def dist_to_prev(c):
-        if prev_point is None:
-            return 0.0
         # distance signée au contour : négative à l'extérieur
         return max(0.0, -cv2.pointPolygonTest(c, (float(prev_point[0]), float(prev_point[1])), True))
 
-    arm = [c for c in cands if _touches_arm_border(c, shape)]
-    if arm:                                   # 1. une tache par laquelle entre le bras
-        if prev_point is not None:
-            return min(arm, key=dist_to_prev)
-        return max(arm, key=cv2.contourArea)
-    if prev_point is not None:                # 2. suivi : la tache la plus proche de la main précédente
-        best = min(cands, key=dist_to_prev)
-        if dist_to_prev(best) <= max_jump:
-            return best
-    return max(cands, key=cv2.contourArea)    # 3. par défaut : la plus grande
+    best = min(cands, key=dist_to_prev)
+    max_jump = cfg.track_max_jump_ratio * shape[1]
+    return best if dist_to_prev(best) <= max_jump else None
 
 
 # -------------------------------------------------------------- caractéristiques
@@ -262,7 +258,8 @@ def count_fingers(contour: np.ndarray, palm_center, palm_radius: float,
 
 def extract_hand(mask: np.ndarray, seg_cfg: SegmentationConfig | None = None,
                  prev_point: Optional[Tuple[float, float]] = None,
-                 finger_cfg: FingerConfig | None = None) -> Optional[HandObservation]:
+                 finger_cfg: FingerConfig | None = None,
+                 *, analyze_fingers: bool = True) -> Optional[HandObservation]:
     seg_cfg = seg_cfg or SegmentationConfig()
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour = _select_contour(contours, mask.shape, prev_point, seg_cfg)
@@ -276,9 +273,11 @@ def extract_hand(mask: np.ndarray, seg_cfg: SegmentationConfig | None = None,
     filled = np.zeros_like(mask)
     cv2.drawContours(filled, [contour], -1, 255, cv2.FILLED)
     center, radius, entry = _palm_center(filled, seg_cfg)
-    fingers, valleys = count_fingers(contour, center, radius, finger_cfg)
-    hull = cv2.convexHull(contour)
-    hull_area = cv2.contourArea(hull)
+    fingers, valleys, hull, hull_area = 0, [], None, 0.0
+    if analyze_fingers:
+        fingers, valleys = count_fingers(contour, center, radius, finger_cfg)
+        hull = cv2.convexHull(contour)
+        hull_area = cv2.contourArea(hull)
 
     return HandObservation(contour=contour, area=area, centroid=centroid,
                            palm_center=center, palm_radius=radius,
