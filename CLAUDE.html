@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>claude</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="CLAUDE_files/libs/clipboard/clipboard.min.js"></script>
+<script src="CLAUDE_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="CLAUDE_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="CLAUDE_files/libs/quarto-html/popper.min.js"></script>
+<script src="CLAUDE_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="CLAUDE_files/libs/quarto-html/anchor.min.js"></script>
+<link href="CLAUDE_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="CLAUDE_files/libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="CLAUDE_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="CLAUDE_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="CLAUDE_files/libs/bootstrap/bootstrap-917079515d91bccb85b543faf8aa8bb6.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="claude.md-contrôle-gestuel-avec-commande-de-profondeur-3d-gif-7001" class="level1">
+<h1>CLAUDE.md — Contrôle gestuel avec commande de profondeur 3D (GIF-7001)</h1>
+<blockquote class="blockquote">
+<p>Mémoire du projet pour Claude Code. Ce fichier résume tout le travail fait jusqu’ici, les décisions prises et la suite. <strong>Le code actuel est dans ce dépôt : lis-le avant de proposer des changements.</strong></p>
+</blockquote>
+<p><strong>Façon de travailler (obligatoire) :</strong> 1. On travaille <strong>par itérations</strong>. Tu n’implémentes l’itération N que lorsqu’on te dit « donne-moi l’itération N ». 2. <strong>Tu modifies les fichiers directement dans le dépôt</strong> et tu montres les diffs pour qu’on les accepte. Avant de modifier, tu indiques en 2 ou 3 lignes quels fichiers tu vas toucher et pourquoi. 3. <strong>Tu testes avant de dire que c’est terminé</strong> : tu écris et exécutes des tests sur des images ou des trajectoires synthétiques dans <code>tests/</code> (scripts simples lancés avec <code>python3</code>, pytest non obligatoire), et tu donnes l’avant / après en chiffres. 4. <strong>Tu ne vois pas la webcam.</strong> Tu peux lancer <code>main.py</code>, mais la validation visuelle est faite par un membre de l’équipe; il te décrit ce qu’il voit et tu corriges. 5. Face à un problème : d’abord la <strong>cause profonde</strong> (en bref), puis la correction, puis « ce que tu dois voir ». 6. Chaque livraison se termine par <strong>comment tester</strong>, <strong>ça fonctionne si…</strong> et <strong>si ça échoue…</strong> (symptôme → paramètre à ajuster). 7. N’ajoute jamais de dépendance autre qu’opencv-python, numpy et matplotlib.</p>
+<p><strong>Environnement :</strong> macOS, zsh, environnement virtuel <code>.venv</code> (exécution avec <code>python3</code>). L’avertissement macOS <code>AVCaptureDeviceTypeExternal is deprecated</code> est sans conséquence; si l’image vient de l’iPhone (Continuity Camera), lancer <code>python3 main.py --cam 1</code>. Les versions d’OpenCV diffèrent sur la forme de certains résultats (par exemple <code>convexityDefects</code> renvoie <code>(N,1,4)</code> ou <code>(N,4)</code>) : toujours utiliser des <code>reshape</code> défensifs.</p>
+<hr>
+<section id="contexte-du-projet" class="level2">
+<h2 class="anchored" data-anchor-id="contexte-du-projet">2. Contexte du projet</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Élément</th>
+<th>Détail</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Équipe</td>
+<td>Agbogan Kokou Joel (537 419 445) · Boucher Dominic (536 888 890) · Daigle Benoit (537 002 267) · Roman Vincent Théo (537 470 712) · Vasquez Ramos Andy Jhonell (537 398 376)</td>
+</tr>
+<tr class="even">
+<td>Rapport préliminaire</td>
+<td>Remise le <strong>20 oct. 2026</strong>. Grille : page titre 1, contexte et solution 2, justification 1, résultats 1, étapes 2, vidéo 1, langue 2</td>
+</tr>
+<tr class="odd">
+<td>Rapport final</td>
+<td>Semaine 15 (vers le 8 déc. 2026, à confirmer)</td>
+</tr>
+<tr class="even">
+<td>Matière utile</td>
+<td>Étalonnage et homographie (sem. 3–5), traitement des images (6–7, 10–11), stéréoscopie (11–13)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Gestes :</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Geste</th>
+<th>Règle</th>
+<th>Commande</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Main ouverte immobile</td>
+<td>4 doigts ou plus, déplacement ≤ 15 px pendant 0,8 s</td>
+<td>Lecture / pause</td>
+</tr>
+<tr class="even">
+<td>Balayage droite / gauche</td>
+<td>|Δx| ≥ 25 % de la largeur en ≤ 0,5 s, |Δy| ≤ 0,5 |Δx|</td>
+<td>±10 s</td>
+</tr>
+<tr class="odd">
+<td>Poing + rapprocher / éloigner</td>
+<td>0 doigt; volume = V₀ + 2 %/cm × (Z₀ − Z)</td>
+<td>Volume</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Contraintes :</strong> - <strong>Aucun apprentissage automatique</strong> (ni MediaPipe, ni réseau de neurones, ni cascade de Haar). - Seulement <code>opencv-python</code>, <code>numpy</code> et <code>matplotlib</code>, avec Python 3.10 ou plus récent. - Tous les seuils sont dans <code>g3d/config.py</code>. - Les calculs se font sur l’<strong>image brute</strong>; le miroir ne sert qu’à l’affichage et au sens des balayages (<code>mirror=True</code>). - Graines aléatoires fixes dans les expériences.</p>
+<hr>
+</section>
+<section id="architecture-convenue" class="level2">
+<h2 class="anchored" data-anchor-id="architecture-convenue">3. Architecture convenue</h2>
+<pre><code>projet/
+├── requirements.txt  .gitignore  README.md  main.py  CLAUDE.md
+├── g3d/  __init__.py  config.py  hand.py  geometry.py  calibration.py
+│         zone.py  depth.py  gestures.py  player.py
+├── scripts/  capture_calibration.py  record_dataset.py
+├── experiments/  exp_hand.py  exp_calibration.py  exp_homography.py
+│                 exp_triangulation.py  exp_gestures.py  exp_real_hands.py  run_all.py
+├── tests/  (tests synthétiques de chaque itération)
+├── data/  (mono.npz, stereo.npz, zone.json, calib_images/, real_hands/)
+├── results/  (figures, summary.json, events_log.csv)</code></pre>
+<p><strong>Flux à chaque image :</strong> <code>HandSegmenter.segment</code> → <code>extract_hand</code> → <code>ControlZone.contains</code> → Z (<code>StereoRig.triangulate</code> ou <code>mono_depth_cm</code>) → <code>Sample</code> → <code>GestureEngine.update</code> → <code>Event</code> → <code>VideoPlayer.handle</code>.</p>
+<p><strong>Ordre fixe des règles dans <code>GestureEngine.update</code> :</strong> 1. Aucune main ou main hors zone → <code>reset()</code>. 2. <strong>Volume</strong> (commande continue, sans délai) : poing; tolérance de 5 images mal comptées; médiane de 9 valeurs de Z; zone morte de 1 cm; hystérésis de 2 %. 3. <strong>Délai</strong> (cooldown) de 1 s. 4. <strong>Balayage</strong> avec <strong>règle anti-retour</strong> : le sens opposé est bloqué pendant 2,5 s s’il part du côté où le balayage précédent s’est terminé; sortir de la zone réarme les deux sens. 5. <strong>Main ouverte immobile</strong> avec <strong>réarmement</strong> : après une pause, la règle se réarme si la main se ferme ou se déplace de plus de 45 px; après un balayage, seulement si la main se ferme.</p>
+<p>Chaque <code>Event</code> porte sa raison chiffrée.</p>
+<hr>
+</section>
+<section id="ce-qui-existe-déjà" class="level2">
+<h2 class="anchored" data-anchor-id="ce-qui-existe-déjà">4. Ce qui existe déjà</h2>
+<p>Une <strong>version de référence complète</strong> a été développée dans une conversation précédente sur claude.ai : les 9 modules, <code>main.py</code>, le script d’étalonnage et les 5 expériences. Ses résultats sur données synthétiques sont les <strong>objectifs</strong> à reproduire :</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Expérience</th>
+<th>Résultat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Doigts, conditions nominales (240 images)</td>
+<td>100 %; centre de paume à 1,5 px près</td>
+</tr>
+<tr class="even">
+<td>Doigts, conditions difficiles</td>
+<td>76 % exact; 95 % sur les classes fonctionnelles (poing / ouverte / autre)</td>
+</tr>
+<tr class="odd">
+<td>Étalonnage synthétique</td>
+<td>RMS 0,075 px; fx +0,008 %</td>
+</tr>
+<tr class="even">
+<td>Homographie de la zone</td>
+<td>σ = 1 px → 0,13 cm; σ = 3 px → 0,41 cm; DLT = OpenCV</td>
+</tr>
+<tr class="odd">
+<td>Triangulation (30 → 80 cm)</td>
+<td>Z stéréo 0,34 → 2,41 cm; mono 2,65 → 7,43 cm</td>
+</tr>
+<tr class="even">
+<td>Gestes (100 essais)</td>
+<td>Balayages 100 % (200 ms); pause 100 % (800 ms); balayage + retour 99 % (22 fausses détections sans anti-retour); volume stéréo 67,8 ± 1,0 %, mono 68,7 ± 3,9 %</td>
+</tr>
+</tbody>
+</table>
+<p><strong>À propos du comptage des doigts :</strong> il sert à lire l’<em>intention</em> de la main, et non sa position. - Le <strong>poing</strong> est « l’embrayage » du volume : le volume ne bouge que tant que le poing est fermé. - La <strong>main ouverte</strong> rend la pause possible. - Les autres formes sont neutres. - Seules ces trois classes comptent. La <strong>solidité</strong> (aire de la main / aire de son enveloppe convexe) reste une solution de secours si le comptage est instable.</p>
+<hr>
+</section>
+<section id="plan-des-itérations-et-état" class="level2">
+<h2 class="anchored" data-anchor-id="plan-des-itérations-et-état">5. Plan des itérations et état</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>#</th>
+<th>Itération</th>
+<th>Ce qu’on doit voir</th>
+<th>État</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>Je vois ma main</td>
+<td>Contour, centre de paume et entrée du bras qui suivent la main; le visage disparaît</td>
+<td>✅ Terminée</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>Je compte les doigts</td>
+<td>0 à 5 doigts à l’écran, creux marqués, poing = 0</td>
+<td>🔎 Implémentée; <strong>validation avec la webcam en cours</strong></td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>Je contrôle une vidéo (MVP)</td>
+<td>Balayage = ±10 s, main ouverte immobile = pause</td>
+<td>🔎 Implémentée; <strong>validation avec la webcam à faire</strong></td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>Volume par la profondeur (mono)</td>
+<td>Approcher le poing fait monter le volume</td>
+<td>🔎 Implémentée; <strong>validation avec la webcam à faire</strong></td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td>Gestes robustes</td>
+<td>Anti-retour, réarmement, tolérance, CSV des raisons</td>
+<td>🔎 Implémentée; <strong>validation avec la webcam à faire</strong></td>
+</tr>
+<tr class="even">
+<td>6</td>
+<td>Zone de contrôle</td>
+<td>Feuille lettre cliquée; rien ne se déclenche hors de la zone</td>
+<td>🔎 Implémentée; <strong>validation avec la webcam à faire</strong></td>
+</tr>
+<tr class="odd">
+<td>7</td>
+<td>Étalonnage</td>
+<td>Damier, K, RMS &lt; 0,5 px; Z mono avec la vraie focale</td>
+<td>🔎 Implémentée; <strong>étalonnage réel à faire</strong> (damier imprimé)</td>
+</tr>
+<tr class="even">
+<td>8</td>
+<td>Stéréo 3D</td>
+<td>Z réelle avec deux caméras, zone 3D</td>
+<td>🔎 Implémentée; <strong>validation avec deux caméras à faire</strong></td>
+</tr>
+<tr class="odd">
+<td>9</td>
+<td>Expériences et figures</td>
+<td><code>run_all.py</code> régénère les 7 figures + <code>summary.json</code></td>
+<td>✅ Terminée (synthétique); mains réelles à enregistrer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Lanceurs de démonstration :</strong> <code>tests/iteration1.py</code> à <code>tests/iteration9.py</code> (un par itération, chacun ajoute la fonction nouvelle aux précédentes). <code>main.py</code> sans option = itération 8 (mono si pas de <code>--cam2</code> ni de <code>data/stereo.npz</code>). Les modes <code>--iteration 1</code> à <code>4</code> gardent exactement leur comportement (moteur <code>robust=False</code>, focale provisoire, pas de zone). <code>tests/test_main_simule.py</code> lance <code>main.py</code> en modes 1 à 8 avec une caméra simulée (touches, clics de zone, touche <code>c</code>, fausse paire stéréo) : OK.</p>
+<p><strong>Mode de démonstration de l’itération 1 :</strong> Correction de la sélection du visage en mouvement : <code>_select_contour</code> exige désormais une liaison au bord gauche/droit/bas à chaque image; suppression du repli sur la plus grande tache et du suivi des taches flottantes. La distance maximale de suivi s’applique aussi aux candidats reliés au bord. Si aucun candidat valide n’existe, <code>None</code> réinitialise les gestes via la boucle existante. <code>tests/test_iter1_visage.py</code> : sur 120 scènes, visage seul et visage proche de l’ancien point sélectionnés 120/120 avant → 0/120 après; main + visage correctement suivis 120/120 avant et après; retrait de main correctement reconnu 0/120 → 120/120. Chaîne couleur/fond/gestes : visage mobile visible dans le masque sur 90 images, mais 0 main sélectionnée et 0 commande après correction. Comptage : 159/160, classes utiles 100 %; tests de volume : OK. Validation webcam restant à faire. Limite : avant-bras continu jusqu’au bord nécessaire; la règle ne sépare pas une silhouette fusionnée main/visage et n’identifie pas un visage touchant un bord admis.</p>
+<p>Avant les validations suivantes, on peut maintenant filmer l’itération 1 seule : clic droit sur <code>iteration1.py</code> dans PyCharm → Run, ou <code>python main.py --iteration 1</code>. Ce mode conserve la segmentation, la paume et l’entrée du bras, sans comptage des doigts, profondeur, moteur de gestes ni lecteur. <code>main.py</code> sans option reste complet. Validation du mode isolé : masque synthétique, géométrie identique au mode complet, absence d’appels aux fonctions désactivées, touches et fermeture testées avec caméra simulée. Tests existants 2, 3 et 4 : OK sous Python 3.10 avec <code>-X utf8</code> sous Windows. La validation visuelle du nouveau mode à la webcam reste à faire par l’utilisateur.</p>
+<p><strong>Itération 2 (implémentée) :</strong> - Mode isolé : lancer <code>tests/iteration2.py</code> dans PyCharm ou <code>python main.py --iteration 2</code>. Affiche le comptage, les classes, la solidité et les creux, sans lecteur, gestes ni Z. Modes 1, 2 et mode complet vérifiés avec caméra simulée (touches et fermeture incluses). Test synthétique des doigts : 159/160 exact, classes utiles 100 %; validation webcam à faire. - <code>FingerConfig</code> : <code>max_defect_angle_deg=90</code>, <code>min_defect_depth_ratio=0.15</code>, <code>protrusion_ring=1.6</code>, <code>protrusion_max_chord=0.9</code>, <code>protrusion_min_reach=2.0</code>. - <code>count_fingers</code> : un creux est un défaut de convexité de profondeur ≥ 0,15 r et d’angle ≤ 90°, <strong>dont les deux bords sont à ≥ 1,7 r du centre de paume</strong> (<code>tip_min_ratio</code>); doigts = bouts distincts (fusion à 0,5 r, <code>tip_merge_ratio</code>). Sans creux, une protubérance étroite compte pour 1 doigt; sinon, c’est un poing (0). - <code>HandObservation</code> contient <code>fingers</code>, <code>finger_valleys</code>, <code>hull</code> et <code>solidity</code>. <code>main.py</code> affiche <code>doigts : n (POING/OUVERTE/autre)</code> et la solidité. - Tests synthétiques (180 mains avec avant-bras, rotations, main gauche et droite) : 100 % exact en conditions nominales; 83 % exact et 100 % sur les classes utiles en conditions difficiles. - <strong>Écarté :</strong> un filtre qui ignorait les creux « du côté du bras » dégradait le comptage quand le pouce pointe vers le poignet (5 → 4). - <strong>Corrigé :</strong> <code>defects.reshape(-1, 4)</code>, à cause de la différence de forme entre versions d’OpenCV. - <strong>Corrigé (webcam : 4 → 5, 3 → 4) :</strong> filtre des bouts de doigts. <code>tests/test_iter2_doigts.py</code> (160 mains avec doigts et pouce repliés) : 80,0 % → 99,4 % exact; conditions difficiles (bords bruités, doigts serrés) : 78,9 % → 91,4 % exact, classes utiles 86,7 % → 99,2 %. - <strong>Reste à faire :</strong> confirmer avec la webcam et noter la solidité observée avec le poing et avec la main ouverte.</p>
+<p><strong>Itération 3 (implémentée) :</strong> - Mode isolé : <code>tests/iteration3.py</code> dans PyCharm, ou <code>python main.py --iteration 3</code>. Suivi, doigts, lecture/pause et balayages actifs; calcul de Z, commande de volume et barre de volume désactivés. Le poing reste neutre et réarme la pause. <code>GestureEngine(..., volume_enabled=False)</code> saute entièrement <code>_volume</code> et vide la trajectoire lorsque le poing est fermé. <code>VideoPlayer(..., show_volume=False)</code> masque la barre. Les valeurs par défaut préservent le mode complet. Validation sans webcam : 12 scénarios × 100 essais passent avec le volume désactivé; balayage 0,3 s = 140 ms et pause = 833 ms, comme avant. Poing mobile sans commande, affichage et touches des modes 1 à 4, options du lanceur vérifiés. Tests de volume de l’itération 4 : OK. Validation visuelle du mode 3 à faire par l’utilisateur. - <code>g3d/gestures.py</code> : <code>Sample(t, x, y, fingers, z_cm, in_zone)</code>, <code>Event(kind, t, value, reason)</code> et <code>GestureEngine(frame_width, cfg)</code>. Ordre : reset → volume → délai de 1 s → balayage → main ouverte immobile. <code>mirror=True</code> : une main qui va vers la gauche de l’image brute est un balayage <strong>droite</strong> à l’écran (+10 s). - Main ouverte immobile : ≥ 4 doigts sur toute la fenêtre de 0,8 s, et écart max. à la position médiane ≤ 15 px. <strong>Verrou simple</strong> (le réarmement complet viendra à l’itération 5) : après une pause, il faut un poing ou un déplacement de plus de 45 px. - <code>g3d/player.py</code> : <code>VideoPlayer(path)</code> lit une vraie vidéo (<code>--video</code>) ou une vidéo synthétique de 3 min (horloge et disque qui fait un tour toutes les 10 s). Le volume est une barre, car OpenCV ne joue pas le son. Touche espace = lecture / pause manuelle. - <code>main.py</code> : fenêtres « Camera » et « Lecteur »; chaque événement est affiché avec sa raison et imprimé dans le terminal. - <code>tests/test_iter3_gestes.py</code> (12 scénarios × 100 essais, 30 im/s, bruit de 2 à 3 px) : 100 % partout. Délais : balayage de 0,3 s → 140 ms, pause → 833 ms. Aucune fausse détection pour un mouvement lent (2 s), une diagonale, une dérive de 60 px/s, un poing ou 3 doigts. - Limite connue de la règle : une dérive lente (moins de ≈ 35 px/s) compte comme immobile, et un mouvement ample de 1,5 s peut atteindre 25 % de la largeur en 0,5 s.</p>
+<p><strong>Itération 4 (implémentée) :</strong> - Lanceur de démonstration : <code>tests/iteration4.py</code>, avec le même principe que les lanceurs précédents. Force <code>--iteration 4</code> et transmet <code>--cam</code> / <code>--video</code>. Active les fonctions cumulées 1 à 4; aucune modification des algorithmes. Affiche Z, la prise du poing et la barre de volume (sans son). Le volume initial est de 50 % à chaque lancement; <code>b</code> ne le réinitialise pas. Vérification : lancement depuis <code>tests</code> et transmission des options OK; <code>test_iter4_volume.py</code> OK (68,2 ± 1,9 % à sigma Z = 1,5 cm, chaîne complète 65,2 % comme précédemment). La validation webcam reste à faire. - <code>g3d/depth.py</code> : <code>mono_depth_cm(r_px) = f · R / r</code>, avec <code>DepthConfig</code> : <code>focal_px=500</code> (provisoire jusqu’à l’itération 7) et <code>palm_radius_cm=4.0</code>. - Volume dans <code>GestureEngine</code> : le poing (0 doigt) sert d’embrayage; tolérance de 5 images; Z₀ = première médiane de 9 valeurs; volume = V₀ + 2 %/cm × (ΔZ moins 1 cm de zone morte <strong>continue</strong>); hystérésis de 2 %; bornes 0–100 %. Pendant la prise du poing, aucun balayage ni aucune pause; le poing réarme la pause. - <code>tests/test_iter4_volume.py</code> : - Z mono sur des poings synthétiques (30 → 80 cm) : biais brut de −6 à −7 % (f et R sont provisoires); après étalonnage en un point, erreur ≤ 0,44 cm. - Volume 50 → 40 cm (attendu 68 %) : 67,6 ± 0,8 % (σ_Z = 0,5 cm), 68,2 ± 1,9 % (1,5 cm), 68,4 ± 3,9 % (3 cm). Sans filtres : 62 événements au lieu de 7. - Poing immobile pendant 3 s : volume modifié dans 0/100 essais (σ = 0,5 cm), 1/100 (1 cm), 28/100 (1,5 cm). - Chaîne complète image → volume : 65,2 % (attendu 68 %), à cause du biais de f. - <strong>Reste à faire (webcam) :</strong> noter le bruit de Z avec le poing immobile; si le volume tremble, augmenter <code>volume_dead_zone_cm</code> (1,5 cm → 9/100 à σ = 1,5 cm).</p>
+<p><strong>Itération 5 (implémentée) :</strong> - <code>GestureEngine(..., robust=True)</code> (défaut; <code>robust=False</code> = itérations 3-4 à l’identique). - Anti-retour (<code>antireturn_s=2,5</code>) : un balayage de sens opposé est bloqué s’il commence du côté de l’arrivée par rapport au <strong>point de départ</strong> du balayage précédent. Le blocage vide la trajectoire et est mémorisé dans <code>engine.suppressed</code> (type <code>seek_bloque</code>, avec raison). <code>reset()</code> (main sortie ou hors zone) réarme les deux sens. - Réarmement : après un balayage, verrou de type « balayage » levé seulement par un poing; après une pause, poing ou déplacement &gt; 45 px (inchangé). - Tolérance : <code>missing_tolerance_frames=2</code> images sans main ignorées; à la 3e, <code>reset()</code> (le test « main perdue 3 images → rien » de l’itération 3 reste vrai). - <code>EventLogger</code> : <code>results/events_log.csv</code> (<code>session, t_s, type, valeur, raison</code>), en ajout. - <code>tests/test_iter5_robuste.py</code> (8 scénarios × 100, avant → après) : balayage + retour naturel 23 → 100 (77 faux retours → 0); balayage puis main ouverte immobile sans pause 0 → 100; main ouverte avec 2 images manquantes → pause 0 → 100; les 5 autres scénarios 100 → 100. Tests 1 à 4 : chiffres identiques.</p>
+<p><strong>Itération 6 (implémentée) :</strong> - <code>g3d/geometry.py</code> : DLT normalisée (Hartley) et triangulation DLT, écrites à la main. - <code>g3d/zone.py</code> : <code>ControlZone.from_clicks</code> (clics sur l’affichage miroir, ordre HG, HD, BD, BG à l’écran), <code>contains(x, y, z, use_z)</code>, <code>to_sheet</code> (cm), <code>data/zone.json</code>. <code>ZoneConfig.orientation="paysage"</code> (le mode <code>auto</code> se trompe 43/200 fois en forte perspective). - <code>main.py</code> : touche <code>z</code> (cliquer), <code>x</code> (effacer), <code>Échap</code>; feuille verte / rouge; <code>Sample.in_zone</code>. - <code>tests/test_iter6_zone.py</code> : DLT = OpenCV (3·10⁻⁵ mm sans bruit, 0,35 mm à σ = 1 px car OpenCV raffine par LM); position sur la feuille σ = 1 px → 0,10 cm, 3 px → 0,29 cm; contains 4000/4000; gestes hors zone 0 commande 100/100; sortie de zone réarme l’anti-retour 100/100. - <strong>Corrigé :</strong> le 4e clic arrivant pendant <code>waitKey</code> faisait afficher un 5e coin (<code>IndexError</code>) → la zone est finalisée au début de l’image suivante.</p>
+<p><strong>Itération 7 (implémentée) :</strong> - <code>g3d/calibration.py</code> (coins sous-pixel, <code>calibrate_mono</code>, <code>calibrate_stereo</code>, npz), <code>scripts/capture_calibration.py</code> (espace = garder, <code>c</code> = étalonner, <code>--from-images</code>). - <code>main.py --iteration 7</code> : f = fx de <code>data/mono.npz</code> (mise à l’échelle de la largeur); touche <code>c</code> = R étalonné avec le poing à 50 cm (médiane de 15 rayons) → <code>data/palm.json</code>. - <code>tests/test_iter7_etalonnage.py</code> (damiers rendus avec K, distorsion connus, f = 600) : RMS 0,021 px, fx +0,006 % (difficile : 0,092 px, −0,08 %); Z mono 30 → 80 cm : erreur moyenne 12,4 cm (f = 500, R = 4) → 0,32 cm; chaîne volume 61,7 % → 67,2 % (attendu 68).</p>
+<p><strong>Itération 8 (implémentée) :</strong> - <code>StereoRig</code> (<code>g3d/depth.py</code>) : points non distordus → coordonnées normalisées → DLT. <code>main.py --cam2 N</code> : 2e segmentation, Z triangulé, fenêtre « Camera 2 », zone 3D (<code>z_min_cm=25</code>, <code>z_max_cm=90</code>). Sans <code>--cam2</code> ou <code>stereo.npz</code> : retour au mono. - <code>tests/test_iter8_stereo.py</code> : étalonnage stéréo RMS 0,023 px, base 9,998 cm (10), rotation 0,04°; DLT = cv2.triangulatePoints (6·10⁻¹³ cm); bruit 1 px, Z 30 → 80 cm : stéréo 0,17 → 1,16 cm, mono 0,29 → 2,06 cm; chaîne image → Z stéréo 0,32 cm; zone 3D 6/6; volume 50 → 40 cm : stéréo 67,5 ± 0,9 %, mono 67,9 ± 1,5 %.</p>
+<p><strong>Itération 9 (terminée en synthétique) :</strong> <code>experiments/run_all.py</code> (≈ 35 s) → <code>results/fig1</code> à <code>fig7</code> + <code>summary.json</code>; <code>exp_real_hands.py</code> ajoute <code>fig8</code> si <code>data/real_hands/</code> contient des masques (<code>scripts/record_dataset.py</code>, touches 0-5). Résultats : doigts nominal 98,3 %, difficile 87,5 % (classes 95,8 %); étalonnage RMS 0,021 px; zone 0,11 / 0,34 cm (σ = 1 / 3 px); Z stéréo 0,17 → 1,16 cm, mono 0,29 → 2,06 cm; faux retours 77 → 0; volume stéréo 67,9 ± 0,8 %, mono 68,0 ± 1,2 %. Données synthétiques partagées : <code>experiments/synth.py</code>.</p>
+<hr>
+</section>
+<section id="problèmes-déjà-résolus-à-ne-pas-répéter" class="level2">
+<h2 class="anchored" data-anchor-id="problèmes-déjà-résolus-à-ne-pas-répéter">6. Problèmes déjà résolus (à ne pas répéter)</h2>
+<ul>
+<li><p>Retour naturel après un balayage compté comme balayage inverse (77/100 essais) : anti-retour de 2,5 s relatif au point de départ du balayage précédent → 0/100.</p></li>
+<li><p>Pause parasite après un balayage main ouverte (100/100) : verrou « balayage » levé seulement par le poing → 0/100.</p></li>
+<li><p>Une image sans main (masque qui clignote) annulait une pause en cours : tolérance de 2 images → 100/100 pauses.</p></li>
+<li><p>Orientation automatique de la feuille fausse en forte perspective (43/200) : orientation fixée dans <code>ZoneConfig</code> (paysage par défaut).</p></li>
+<li><p><code>IndexError</code> à la fin des 4 clics de zone (clic reçu pendant <code>waitKey</code>) : zone finalisée au début de l’image suivante.</p></li>
+<li><p><code>tests/iteration1.py</code> ne trouvait pas <code>main</code> hors PyCharm : ajout du <code>sys.path</code> comme dans les autres lanceurs.</p></li>
+<li><p>Lancement séparé de l’itération 4 dans PyCharm : ajout de <code>tests/iteration4.py</code>, utilisant le mode complet existant, sans copie des calculs ou des réglages.</p></li>
+<li><p>Visage mobile repris comme main après perte du bras : le repli sur la plus grande tache et le suivi sans liaison au bord étaient encore actifs. Tous les candidats doivent désormais toucher un bord d’entrée de bras; sinon aucune observation n’est envoyée. Le masque brut de peau/mouvement peut encore montrer le visage sans qu’il soit sélectionné. Régression : <code>tests/test_iter1_visage.py</code>.</p></li>
+<li><p>Le volume et la profondeur gênaient la démonstration de l’itération 3 : lanceur <code>tests/iteration3.py</code> et option <code>--iteration 3</code>, avec désactivation du calcul de profondeur et du moteur de volume, et masquage de la barre du lecteur.</p></li>
+<li><p>Les commandes de lecture et de volume gênaient les essais de comptage : mode <code>--iteration 2</code> et lanceur <code>tests/iteration2.py</code>, sans instanciation du lecteur ou du moteur de gestes et sans calcul de profondeur. Le lanceur retrouve la racine du projet même lorsqu’il est exécuté depuis le dossier <code>tests</code>.</p></li>
+<li><p>Démonstration de l’itération 1 encombrée par les autres fonctions : ajout du lanceur <code>iteration1.py</code> et de l’option <code>--iteration 1</code>; aucune commande du lecteur n’est exécutée dans ce mode. Si le suivi échoue, réapprendre le fond avec <code>b</code>, main hors champ, et faire entrer l’avant-bras par le bas ou un côté.</p></li>
+</ul>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Symptôme</th>
+<th>Cause</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Poing lu comme 1 doigt</td>
+<td>Le poignet allonge la silhouette</td>
+<td>Un doigt = protubérance <strong>étroite</strong> (corde &lt; 0,9 r)</td>
+</tr>
+<tr class="even">
+<td>Le point rouge part vers l’avant-bras</td>
+<td>L’avant-bras contient un disque aussi grand que la paume</td>
+<td>Profil de demi-largeur depuis le bout de la main; paume = premier sommet avant le poignet (baisse ≥ 15 %). Testé : 24/24 contre 14/24</td>
+</tr>
+<tr class="odd">
+<td>Le point part sur le visage et y reste</td>
+<td>Fond appris sur la 1re image; le masque n’était jamais mis à jour; on prenait la plus grande tache</td>
+<td>Apprentissage de 30 images; main = tache qui touche le bord gauche, droit ou bas (+ suivi); fond mis à jour sauf sur la main confirmée. Testé : main choisie 70/70 contre 0/70</td>
+</tr>
+<tr class="even">
+<td>Le retour de la main déclenche un recul</td>
+<td>Mouvement naturel après un balayage</td>
+<td>Anti-retour de 2,5 s</td>
+</tr>
+<tr class="odd">
+<td>Pause parasite après un balayage</td>
+<td>Main ouverte immobile à la fin du balayage</td>
+<td>Réarmement seulement quand la main se ferme</td>
+</tr>
+<tr class="even">
+<td>Volume qui tremble ou biaisé</td>
+<td>Bruit sur Z et erreurs de comptage</td>
+<td>Médiane de 9, hystérésis de 2 %, tolérance de 5 images</td>
+</tr>
+<tr class="odd">
+<td>Un doigt de trop (4 → 5, 3 → 4, poing → 3)</td>
+<td>Le creux entre un doigt tendu et une jointure ou le pouce replié comptait (« n creux → n + 1 »)</td>
+<td>Les deux bords du creux doivent être à ≥ 1,7 r de la paume; on compte les bouts distincts. 80 % → 99,4 %</td>
+</tr>
+<tr class="even">
+<td>La pause ne se réarmait jamais après un poing</td>
+<td>Pendant la prise du poing, le moteur sortait avant de déverrouiller la pause</td>
+<td>Déverrouillage avant la règle du volume. 0/100 → 100/100</td>
+</tr>
+<tr class="odd">
+<td>Volume qui bouge avec un poing immobile (98/100 essais à σ_Z = 1,5 cm)</td>
+<td>Zone morte « sèche » : au premier dépassement de 1 cm, la cible sautait de ±2 % (= l’hystérésis)</td>
+<td>Zone morte continue (on retranche 1 cm de ΔZ) : 98/100 → 28/100 à σ = 1,5 cm, 1/100 à σ = 1 cm</td>
+</tr>
+<tr class="even">
+<td>Plantage <code>cannot unpack non-iterable numpy.int32</code></td>
+<td><code>convexityDefects</code> renvoie <code>(N,4)</code> selon la version d’OpenCV</td>
+<td><code>defects.reshape(-1, 4)</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="au-début-de-chaque-session" class="level2">
+<h2 class="anchored" data-anchor-id="au-début-de-chaque-session">7. Au début de chaque session</h2>
+<ol type="1">
+<li>Lis ce fichier et le code de <code>g3d/</code> et de <code>main.py</code>.</li>
+<li>Confirme l’état en 3 ou 4 lignes : quelle itération est terminée, laquelle est en validation, laquelle vient ensuite.</li>
+<li><strong>N’écris pas de code</strong> tant qu’on ne te le demande pas (« donne-moi l’itération N » ou une correction précise).</li>
+<li>À la fin de chaque itération, <strong>mets à jour les sections 5 et 6 de ce fichier</strong> (état et problèmes résolus) et propose un message de commit en français.</li>
+</ol>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

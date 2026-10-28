@@ -1,7 +1,4 @@
 """Régression : une tache de visage séparée du bord ne doit pas devenir une main.
-
-Lancer : python -X utf8 tests/test_iter1_visage.py
-Les silhouettes sont synthétiques; la validation webcam reste nécessaire.
 """
 import sys
 from pathlib import Path

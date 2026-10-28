@@ -54,7 +54,6 @@ projet/
 ├── tests/  (tests synthétiques de chaque itération)
 ├── data/  (mono.npz, stereo.npz, zone.json, calib_images/, real_hands/)
 ├── results/  (figures, summary.json, events_log.csv)
-└── docs/  (etalonnage.md, guion_video.md, rapport, backlog, plan des itérations)
 ```
 
 **Flux à chaque image :** `HandSegmenter.segment` → `extract_hand` → `ControlZone.contains` → Z (`StereoRig.triangulate` ou `mono_depth_cm`) → `Sample` → `GestureEngine.update` → `Event` → `VideoPlayer.handle`.
@@ -99,11 +98,19 @@ Une **version de référence complète** a été développée dans une conversat
 | 2 | Je compte les doigts | 0 à 5 doigts à l'écran, creux marqués, poing = 0 | 🔎 Implémentée; **validation avec la webcam en cours** |
 | 3 | Je contrôle une vidéo (MVP) | Balayage = ±10 s, main ouverte immobile = pause | 🔎 Implémentée; **validation avec la webcam à faire** |
 | 4 | Volume par la profondeur (mono) | Approcher le poing fait monter le volume | 🔎 Implémentée; **validation avec la webcam à faire** |
-| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | ⏭️ **Suivante** |
-| 6 | Zone de contrôle | Feuille lettre cliquée; rien ne se déclenche hors de la zone | À faire |
-| 7 | Étalonnage | Damier, K, RMS < 0,5 px; Z mono avec la vraie focale | À faire |
-| 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | À faire (après les sem. 11–13) |
-| 9 | Expériences et figures | `run_all.py` régénère les 7 figures + `summary.json` | En parallèle |
+| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 6 | Zone de contrôle | Feuille lettre cliquée; rien ne se déclenche hors de la zone | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 7 | Étalonnage | Damier, K, RMS < 0,5 px; Z mono avec la vraie focale | 🔎 Implémentée; **étalonnage réel à faire** (damier imprimé) |
+| 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | 🔎 Implémentée; **validation avec deux caméras à faire** |
+| 9 | Expériences et figures | `run_all.py` régénère les 7 figures + `summary.json` | ✅ Terminée (synthétique); mains réelles à enregistrer |
+
+**Lanceurs de démonstration :** `tests/iteration1.py` à `tests/iteration9.py` (un par
+itération, chacun ajoute la fonction nouvelle aux précédentes). `main.py` sans option =
+itération 8 (mono si pas de `--cam2` ni de `data/stereo.npz`). Les modes `--iteration 1`
+à `4` gardent exactement leur comportement (moteur `robust=False`, focale provisoire, pas
+de zone).
+`tests/test_main_simule.py` lance `main.py` en modes 1 à 8 avec une caméra simulée
+(touches, clics de zone, touche `c`, fausse paire stéréo) : OK.
 
 **Mode de démonstration de l'itération 1 :**
 Correction de la sélection du visage en mouvement : `_select_contour` exige
@@ -179,11 +186,75 @@ La validation visuelle du nouveau mode à la webcam reste à faire par l'utilisa
   - Chaîne complète image → volume : 65,2 % (attendu 68 %), à cause du biais de f.
 - **Reste à faire (webcam) :** noter le bruit de Z avec le poing immobile; si le volume tremble, augmenter `volume_dead_zone_cm` (1,5 cm → 9/100 à σ = 1,5 cm).
 
-**Itération 5 (suivante) :** anti-retour de 2,5 s, réarmement complet (après un balayage, seulement si la main se ferme), tolérance aux images sans main, CSV des raisons (`results/events_log.csv`).
+**Itération 5 (implémentée) :**
+- `GestureEngine(..., robust=True)` (défaut; `robust=False` = itérations 3-4 à l'identique).
+- Anti-retour (`antireturn_s=2,5`) : un balayage de sens opposé est bloqué s'il commence
+  du côté de l'arrivée par rapport au **point de départ** du balayage précédent. Le blocage
+  vide la trajectoire et est mémorisé dans `engine.suppressed` (type `seek_bloque`, avec raison).
+  `reset()` (main sortie ou hors zone) réarme les deux sens.
+- Réarmement : après un balayage, verrou de type « balayage » levé seulement par un poing;
+  après une pause, poing ou déplacement > 45 px (inchangé).
+- Tolérance : `missing_tolerance_frames=2` images sans main ignorées; à la 3e, `reset()`
+  (le test « main perdue 3 images → rien » de l'itération 3 reste vrai).
+- `EventLogger` : `results/events_log.csv` (`session, t_s, type, valeur, raison`), en ajout.
+- `tests/test_iter5_robuste.py` (8 scénarios × 100, avant → après) : balayage + retour naturel
+  23 → 100 (77 faux retours → 0); balayage puis main ouverte immobile sans pause 0 → 100;
+  main ouverte avec 2 images manquantes → pause 0 → 100; les 5 autres scénarios 100 → 100.
+  Tests 1 à 4 : chiffres identiques.
+
+**Itération 6 (implémentée) :**
+- `g3d/geometry.py` : DLT normalisée (Hartley) et triangulation DLT, écrites à la main.
+- `g3d/zone.py` : `ControlZone.from_clicks` (clics sur l'affichage miroir, ordre HG, HD, BD, BG
+  à l'écran), `contains(x, y, z, use_z)`, `to_sheet` (cm), `data/zone.json`.
+  `ZoneConfig.orientation="paysage"` (le mode `auto` se trompe 43/200 fois en forte perspective).
+- `main.py` : touche `z` (cliquer), `x` (effacer), `Échap`; feuille verte / rouge; `Sample.in_zone`.
+- `tests/test_iter6_zone.py` : DLT = OpenCV (3·10⁻⁵ mm sans bruit, 0,35 mm à σ = 1 px car OpenCV
+  raffine par LM); position sur la feuille σ = 1 px → 0,10 cm, 3 px → 0,29 cm; contains
+  4000/4000; gestes hors zone 0 commande 100/100; sortie de zone réarme l'anti-retour 100/100.
+- **Corrigé :** le 4e clic arrivant pendant `waitKey` faisait afficher un 5e coin
+  (`IndexError`) → la zone est finalisée au début de l'image suivante.
+
+**Itération 7 (implémentée) :**
+- `g3d/calibration.py` (coins sous-pixel, `calibrate_mono`, `calibrate_stereo`, npz),
+  `scripts/capture_calibration.py` (espace = garder, `c` = étalonner, `--from-images`).
+- `main.py --iteration 7` : f = fx de `data/mono.npz` (mise à l'échelle de la largeur);
+  touche `c` = R étalonné avec le poing à 50 cm (médiane de 15 rayons) → `data/palm.json`.
+- `tests/test_iter7_etalonnage.py` (damiers rendus avec K, distorsion connus, f = 600) :
+  RMS 0,021 px, fx +0,006 % (difficile : 0,092 px, −0,08 %); Z mono 30 → 80 cm :
+  erreur moyenne 12,4 cm (f = 500, R = 4) → 0,32 cm; chaîne volume 61,7 % → 67,2 % (attendu 68).
+
+**Itération 8 (implémentée) :**
+- `StereoRig` (`g3d/depth.py`) : points non distordus → coordonnées normalisées → DLT.
+  `main.py --cam2 N` : 2e segmentation, Z triangulé, fenêtre « Camera 2 », zone 3D
+  (`z_min_cm=25`, `z_max_cm=90`). Sans `--cam2` ou `stereo.npz` : retour au mono.
+- `tests/test_iter8_stereo.py` : étalonnage stéréo RMS 0,023 px, base 9,998 cm (10), rotation
+  0,04°; DLT = cv2.triangulatePoints (6·10⁻¹³ cm); bruit 1 px, Z 30 → 80 cm : stéréo
+  0,17 → 1,16 cm, mono 0,29 → 2,06 cm; chaîne image → Z stéréo 0,32 cm; zone 3D 6/6;
+  volume 50 → 40 cm : stéréo 67,5 ± 0,9 %, mono 67,9 ± 1,5 %.
+
+**Itération 9 (terminée en synthétique) :** `experiments/run_all.py` (≈ 35 s) → `results/fig1`
+à `fig7` + `summary.json`; `exp_real_hands.py` ajoute `fig8` si `data/real_hands/` contient
+des masques (`scripts/record_dataset.py`, touches 0-5). Résultats : doigts nominal 98,3 %,
+difficile 87,5 % (classes 95,8 %); étalonnage RMS 0,021 px; zone 0,11 / 0,34 cm (σ = 1 / 3 px);
+Z stéréo 0,17 → 1,16 cm, mono 0,29 → 2,06 cm; faux retours 77 → 0; volume stéréo
+67,9 ± 0,8 %, mono 68,0 ± 1,2 %. Données synthétiques partagées : `experiments/synth.py`.
 
 ---
 
 ## 6. Problèmes déjà résolus (à ne pas répéter)
+
+- Retour naturel après un balayage compté comme balayage inverse (77/100 essais) :
+  anti-retour de 2,5 s relatif au point de départ du balayage précédent → 0/100.
+- Pause parasite après un balayage main ouverte (100/100) : verrou « balayage » levé
+  seulement par le poing → 0/100.
+- Une image sans main (masque qui clignote) annulait une pause en cours : tolérance de
+  2 images → 100/100 pauses.
+- Orientation automatique de la feuille fausse en forte perspective (43/200) :
+  orientation fixée dans `ZoneConfig` (paysage par défaut).
+- `IndexError` à la fin des 4 clics de zone (clic reçu pendant `waitKey`) : zone
+  finalisée au début de l'image suivante.
+- `tests/iteration1.py` ne trouvait pas `main` hors PyCharm : ajout du `sys.path` comme
+  dans les autres lanceurs.
 
 - Lancement séparé de l'itération 4 dans PyCharm : ajout de `tests/iteration4.py`,
   utilisant le mode complet existant, sans copie des calculs ou des réglages.

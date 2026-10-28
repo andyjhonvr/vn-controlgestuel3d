@@ -1,0 +1,204 @@
+{
+  "doigts_et_paume": {
+    "nominal": {
+      "images": 240,
+      "exact_pct": 98.333,
+      "classes_utiles_pct": 99.583,
+      "paume_erreur_mediane_r": 0.221
+    },
+    "difficile": {
+      "images": 240,
+      "exact_pct": 87.5,
+      "classes_utiles_pct": 95.833,
+      "paume_erreur_mediane_r": 0.206
+    },
+    "figures": [
+      "results/fig1_doigts_confusion.png",
+      "results/fig2_paume_erreur.png"
+    ]
+  },
+  "etalonnage": {
+    "15_vues_nominal": {
+      "rms_px": 0.0214,
+      "fx_erreur_pct": 0.0142
+    },
+    "15_vues_difficile": {
+      "rms_px": 0.0919,
+      "fx_erreur_pct": 0.0845
+    },
+    "figures": [
+      "results/fig3_etalonnage.png"
+    ]
+  },
+  "homographie_zone": {
+    "erreur_cm": {
+      "sigma_0px": 0.0,
+      "sigma_0.5px": 0.057,
+      "sigma_1px": 0.113,
+      "sigma_2px": 0.221,
+      "sigma_3px": 0.344,
+      "sigma_4px": 0.444,
+      "sigma_5px": 0.54
+    },
+    "ecart_max_dlt_opencv_cm": 3.483556536565402e-06,
+    "figures": [
+      "results/fig4_homographie.png"
+    ]
+  },
+  "triangulation": {
+    "z_cm": [
+      30,
+      40,
+      50,
+      60,
+      70,
+      80
+    ],
+    "stereo_erreur_moy_cm": [
+      0.165,
+      0.281,
+      0.453,
+      0.656,
+      0.895,
+      1.162
+    ],
+    "mono_erreur_moy_cm": [
+      0.295,
+      0.557,
+      0.836,
+      1.27,
+      1.72,
+      2.063
+    ],
+    "stereo_sigma_cm": [
+      0.207,
+      0.356,
+      0.562,
+      0.826,
+      1.146,
+      1.449
+    ],
+    "mono_sigma_cm": [
+      0.374,
+      0.699,
+      1.032,
+      1.569,
+      2.116,
+      2.612
+    ],
+    "sigma_z_50cm": {
+      "stereo": 0.5616174166046388,
+      "mono": 1.0318896708181233
+    },
+    "figures": [
+      "results/fig5_triangulation.png"
+    ]
+  },
+  "gestes_et_volume": {
+    "scenarios": {
+      "balayage droite 0,3 s": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": 140
+      },
+      "balayage gauche 0,3 s": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": 140
+      },
+      "main ouverte immobile": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": 833
+      },
+      "pause, poing, pause": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": 833
+      },
+      "déplacement lent (2 s) → rien": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "diagonale → rien": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "poing immobile → rien": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "3 doigts immobiles → rien": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "balayage + retour naturel": {
+        "avant": 23,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "balayage main ouverte puis immobile": {
+        "avant": 0,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "balayage, poing, main ouverte immobile": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "balayage, sortie du champ, balayage inverse": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "2 balayages droite (retour lent)": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "balayage inverse après 2,7 s": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "main ouverte avec 2 images sans main": {
+        "avant": 0,
+        "apres": 100,
+        "delai_ms": null
+      },
+      "main absente 3 images de suite": {
+        "avant": 100,
+        "apres": 100,
+        "delai_ms": null
+      }
+    },
+    "balayage_retour_faux_avant": 77,
+    "balayage_retour_faux_apres": 0,
+    "volume": {
+      "stereo": {
+        "sigma_z_cm": 0.562,
+        "volume_final_pct": 67.91,
+        "ecart_type_pct": 0.79
+      },
+      "mono": {
+        "sigma_z_cm": 1.032,
+        "volume_final_pct": 68.03,
+        "ecart_type_pct": 1.19
+      }
+    },
+    "figures": [
+      "results/fig6_gestes.png",
+      "results/fig7_volume.png"
+    ]
+  },
+  "mains_reelles": {
+    "disponible": false,
+    "message": "aucune donnée : lancer scripts/record_dataset.py pour enregistrer des mains"
+  },
+  "genere_le": "2026-10-22 15:03:21"
+}

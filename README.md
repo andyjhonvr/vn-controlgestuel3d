@@ -6,10 +6,19 @@ pip install -r requirements.txt
 python3 main.py                    # vidéo synthétique
 python3 main.py --video film.mp4   # vraie vidéo (--cam 1 pour l'iPhone)
 
-# Tests synthétiques
+# Tests synthétiques (sans caméra)
+python3 tests/test_iter1_visage.py
 python3 tests/test_iter2_doigts.py
 python3 tests/test_iter3_gestes.py
 python3 tests/test_iter4_volume.py
+python3 tests/test_iter5_robuste.py
+python3 tests/test_iter6_zone.py
+python3 tests/test_iter7_etalonnage.py
+python3 tests/test_iter8_stereo.py
+python3 tests/test_main_simule.py      # main.py, modes 1 à 8, caméra simulée
+
+# Expériences : 7 figures + results/summary.json (~1 min)
+python3 experiments/run_all.py
 
 Allow acces to camera
 
@@ -36,8 +45,8 @@ Regression synthetique : `python -X utf8 tests/test_iter1_visage.py`.
 
 ## Filmer uniquement l'itération 1
 
-Dans PyCharm, clic droit sur `iteration1.py` puis **Run 'iteration1'**.
-En terminal : `python iteration1.py` (ou `python main.py --iteration 1`).
+Dans PyCharm, clic droit sur `tests/iteration1.py` puis **Run 'iteration1'**.
+En terminal : `python tests/iteration1.py` (ou `python main.py --iteration 1`).
 L'option `--cam 1` permet de sélectionner une autre caméra.
 
 Ce mode affiche la caméra et le masque, le contour vert, le centre et le cercle
@@ -48,7 +57,8 @@ l'avant-bras par le bas ou un côté. Vérifiez le suivi et le retour à « aucu
 après retrait. Touches : `b` fond, `d` masque, `m` diagnostic, `q` quitter.
 Si le fond est mal appris, retirez la main et appuyez sur `b`.
 
-`main.py` sans option continue de lancer les itérations 1 à 4 ensemble.
+`main.py` sans option lance toutes les fonctions (itérations 1 à 8; profondeur mono
+si aucune 2e caméra n'est donnée).
 
 ## Filmer l'itération 2 sans les commandes des itérations 3 et 4
 
@@ -114,3 +124,43 @@ Si le réglage échoue, vérifier d'abord `POING`, le masque (`m`) et la continu
 bras. Si le volume bouge au repos, noter les variations de Z pour le protocole de
 bruit avant de modifier les seuils. Test automatique :
 `python -X utf8 tests/test_iter4_volume.py`.
+
+
+## Filmer l'itération 5 : gestes robustes
+
+`python tests/iteration5.py` (ou `python main.py --iteration 5`). Mêmes gestes qu'à
+l'itération 4, avec : **anti-retour** (le retour naturel de la main après un balayage
+est bloqué 2,5 s et affiché `seek_bloque` dans le terminal), **réarmement** (après un
+balayage, la pause n'est possible qu'après avoir fermé le poing), **tolérance** de 2
+images sans main, et **journal CSV** `results/events_log.csv` (une ligne par commande
+ou blocage, avec la raison chiffrée).
+
+Pour tester : balayer vers la droite puis ramener la main normalement → un seul +10 s.
+Après un balayage, laisser la main ouverte immobile → pas de pause; fermer le poing puis
+rouvrir → pause. Sortir la main du champ réarme les deux sens.
+
+## Filmer l'itération 6 : zone de contrôle
+
+`python tests/iteration6.py`. Appuyer sur `z` et cliquer les 4 coins de la feuille lettre
+(haut-gauche, haut-droit, bas-droit, bas-gauche, tels que vus à l'écran). La feuille est
+dessinée en vert (rouge si la main est hors zone) et la position de la main sur la feuille
+est affichée en cm. Hors de la feuille : `HORS ZONE`, aucune commande. `x` efface la zone.
+
+## Filmer l'itération 7 : étalonnage
+
+1. `python scripts/capture_calibration.py --square 2.5` : 15-20 vues du damier (espace),
+   puis `c` → `data/mono.npz`, RMS < 0,5 px.
+2. `python tests/iteration7.py` : la ligne bleue affiche `f=… px (etalonnee)`. Poing à 50 cm,
+   touche `c` → R étalonné (`data/palm.json`). Z est alors en vrais centimètres.
+
+## Filmer l'itération 8 : stéréo
+
+1. `python scripts/capture_calibration.py --cam 0 --cam2 1 --square 2.5` → `data/stereo.npz`.
+2. `python tests/iteration8.py` (2e caméra = 1 par défaut, sinon `--cam2 N`).
+   Z triangulé (`Z st`), fenêtre `Camera 2`, zone 3D (feuille + Z entre 25 et 90 cm).
+
+## Itération 9 : expériences et figures
+
+`python tests/iteration9.py` (ou `python experiments/run_all.py`) régénère
+`results/fig1` à `fig7` et `results/summary.json`. Avec des vraies mains enregistrées par
+`python scripts/record_dataset.py` (touches 0-5), une 8e figure est ajoutée.

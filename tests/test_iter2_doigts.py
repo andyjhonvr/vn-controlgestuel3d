@@ -1,10 +1,4 @@
 """Itération 2 : comptage des doigts sur des mains synthétiques.
-
-Chaque main a une paume, un avant-bras qui sort par le bas de l'image, des doigts
-tendus et des doigts REPLIÉS (petites bosses des jointures, pouce replié contre la
-paume). Les doigts repliés sont le cas qui trompait la règle « n creux → n + 1 ».
-
-Lancer : python3 tests/test_iter2_doigts.py
 """
 import os
 import sys

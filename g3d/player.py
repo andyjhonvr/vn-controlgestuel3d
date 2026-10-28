@@ -1,10 +1,4 @@
 """Lecteur vidéo piloté par les événements du moteur de gestes.
-
-Deux sources :
-  - une vraie vidéo (python3 main.py --video film.mp4), lue avec cv2.VideoCapture;
-  - sinon une vidéo synthétique (horloge, barre de progression, disque qui tourne),
-    pratique pour voir les sauts de ±10 s d'un coup d'œil.
-OpenCV ne joue pas le son : le volume est affiché sous forme de barre.
 """
 from __future__ import annotations
 

@@ -1,12 +1,4 @@
 """Itération 4 : volume par la profondeur monoculaire.
-
-1. Z mono sur des masques synthétiques de poing, de 30 à 80 cm (rayon r = f·R/Z) :
-   biais brut, puis erreur après étalonnage en un point (50 cm).
-2. Moteur de volume sur des trajectoires de Z bruitées (bruit typique du mono) :
-   poing à 50 cm, approché à 40 cm → attendu 50 % + 2 %/cm × 10 cm = 70 %, moins la zone morte
-   de 1 cm (−2 %) → 68 %.
-3. Chaîne complète image → main → Z → volume sur des masques de poing qui s'approchent.
-
 Lancer : python3 tests/test_iter4_volume.py
 """
 import os

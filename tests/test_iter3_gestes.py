@@ -1,10 +1,4 @@
 """Itération 3 : balayages et main ouverte immobile sur des trajectoires synthétiques.
-
-Trajectoires du centre de paume à 30 images/s, dans l'image BRUTE (640 px de large),
-avec un bruit gaussien de position. Moteur en mode miroir (comme main.py) : une main
-qui va vers la gauche de l'image brute va vers la DROITE à l'écran → +10 s.
-
-Lancer : python3 tests/test_iter3_gestes.py
 """
 import os
 import sys
