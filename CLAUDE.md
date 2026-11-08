@@ -54,7 +54,6 @@ projet/
 ├── tests/  (tests synthétiques de chaque itération)
 ├── data/  (mono.npz, stereo.npz, zone.json, calib_images/, real_hands/)
 ├── results/  (figures, summary.json, events_log.csv)
-└── docs/  (etalonnage.md, guion_video.md, rapport, backlog, plan des itérations)
 ```
 
 **Flux à chaque image :** `HandSegmenter.segment` → `extract_hand` → `ControlZone.contains` → Z (`StereoRig.triangulate` ou `mono_depth_cm`) → `Sample` → `GestureEngine.update` → `Event` → `VideoPlayer.handle`.
@@ -95,17 +94,51 @@ Une **version de référence complète** a été développée dans une conversat
 
 | # | Itération | Ce qu'on doit voir | État |
 |---|---|---|---|
-| 1 | Je vois ma main | Contour, centre de paume et entrée du bras qui suivent la main; le visage disparaît | ✅ Terminée |
+| 1 | Je vois ma main | Contour, centre de paume et entrée du bras qui suivent la main; le visage disparaît | 🔎 Correction couleur/fond testée; nouvelle validation webcam à faire |
 | 2 | Je compte les doigts | 0 à 5 doigts à l'écran, creux marqués, poing = 0 | 🔎 Implémentée; **validation avec la webcam en cours** |
 | 3 | Je contrôle une vidéo (MVP) | Balayage = ±10 s, main ouverte immobile = pause | 🔎 Implémentée; **validation avec la webcam à faire** |
 | 4 | Volume par la profondeur (mono) | Approcher le poing fait monter le volume | 🔎 Implémentée; **validation avec la webcam à faire** |
-| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | ⏭️ **Suivante** |
-| 6 | Zone de contrôle | Feuille lettre cliquée; rien ne se déclenche hors de la zone | À faire |
-| 7 | Étalonnage | Damier, K, RMS < 0,5 px; Z mono avec la vraie focale | À faire |
-| 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | À faire (après les sem. 11–13) |
-| 9 | Expériences et figures | `run_all.py` régénère les 7 figures + `summary.json` | En parallèle |
+| 5 | Gestes robustes | Anti-retour, réarmement, tolérance, CSV des raisons | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 6 | Zone de contrôle | Feuille lettre cliquée; rien ne se déclenche hors de la zone | 🔎 Implémentée; **validation avec la webcam à faire** |
+| 7 | Étalonnage | Damier, K, RMS < 0,5 px; Z mono avec la vraie focale | 🔎 Implémentée; **étalonnage réel à faire** (damier imprimé) |
+| 8 | Stéréo 3D | Z réelle avec deux caméras, zone 3D | 🔎 Implémentée; **validation avec deux caméras à faire** |
+| 9 | Expériences et figures | `run_all.py` régénère les 7 figures + `summary.json` | ✅ Terminée (synthétique); mains réelles à enregistrer |
+
+**Lanceurs de démonstration :** `tests/iteration1.py` à `tests/iteration9.py` (un par
+itération, chacun ajoute la fonction nouvelle aux précédentes). `main.py` sans option =
+itération 8 (mono si pas de `--cam2` ni de `data/stereo.npz`). Les modes `--iteration 1`
+à `4` gardent exactement leur comportement (moteur `robust=False`, focale provisoire, pas
+de zone).
+`tests/test_main_simule.py` lance `main.py` en modes 1 à 8 avec une caméra simulée
+(touches, clics de zone, touche `c`, fausse paire stéréo) : OK.
 
 **Mode de démonstration de l'itération 1 :**
+**État au 8 novembre :** la reconstruction de composantes entières décrite dans
+l'historique ci-dessous est remplacée par `Peau & Avant-plan`, avec une marge
+locale `fg_recovery_px=2`. La comparaison BGR est conservée. Une feuille admise
+par la couleur ne doit plus être ajoutée entièrement à la main par simple connexion.
+`test_feuille.py` : 6/6 scènes à deux doigts, 60 images immobiles, retrait OK;
+test fond/couleur 12/12, visage 0/120, comptage 159/160 inchangés. Le test ancien
+qui exigeait de reconstruire des doigts exactement identiques au fond est remplacé
+par la non-reconstruction de ces régions sans information observable. Limite assumée;
+ne pas réintroduire toute la composante pour faire passer cet ancien cas.
+Validation webcam de l'itération 6 restant à faire.
+
+Correction du 6 novembre 2026 : `HandSegmenter` compare le fond en BGR (maximum
+des écarts par canal) et conserve les composantes de peau nettoyées ayant au moins
+12 % de pixels d'avant-plan. L'intersection pixel par pixel supprimait les zones
+de main de même luminosité que le fond. `_select_contour` rejette aussi une aire
+supérieure à 40 % de l'image ou une étendue sur un bord d'entrée supérieure à 45 %
+de ce bord. Ces seuils sont dans `SegmentationConfig`. Les plages YCrCb restent
+inchangées; pas de nouveau modèle ni de dépendance.
+`tests/test_segmentation_fond.py` : sur les scènes synthétiques ciblées, détection
+à luminance égale 0/12 → 12/12; doigts devant un fond de même couleur 0/6 → 6/6;
+torse relié au visage retenu 24/24 → 0/24; main distincte à côté du torse 0/24 →
+24/24; main immobile complète 0/180 → 180/180 images; fantômes après retrait 0/10.
+Comptage existant inchangé (159/160, classes 100 %). La validation webcam reste
+nécessaire : les limites géométriques ne reconnaissent pas une main et une fusion
+main/visage ou une main trop proche peut encore être rejetée.
+
 Correction de la sélection du visage en mouvement : `_select_contour` exige
 désormais une liaison au bord gauche/droit/bas à chaque image; suppression du
 repli sur la plus grande tache et du suivi des taches flottantes. La distance
@@ -162,6 +195,16 @@ La validation visuelle du nouveau mode à la webcam reste à faire par l'utilisa
 - Limite connue de la règle : une dérive lente (moins de ≈ 35 px/s) compte comme immobile, et un mouvement ample de 1,5 s peut atteindre 25 % de la largeur en 0,5 s.
 
 **Itération 4 (implémentée) :**
+- Réglage doigts/flou du 6 novembre : noyau morphologique 5 → 3, fermeture 2 → 1
+  pour préserver les creux. Le volume (modes 4–8, même robust=False) exige un poing
+  continu pendant 0,2 s avec déplacement xy limité à 4 % de la largeur. Pendant
+  cette confirmation, aucune commande mais trajectoire conservée; réouverture,
+  perte de main ou absence de profondeur annulent la confirmation. Les profondeurs
+  sont recueillies dès le début pour garder la référence existante. L'affichage du
+  nombre brut n'est pas lissé : zéro doigt peut encore apparaître, sans embrayage.
+  `test_balayage_volume.py` : espaces conservés 0/5 → 5/5 et 8/8 balayages avec
+  faux zéros, interruptions, poing mobile et vrai volume OK. Tests volume/gestes
+  existants OK. Validation webcam à faire; davantage de bruit peut subsister.
 - Lanceur de démonstration : `tests/iteration4.py`, avec le même principe que les
   lanceurs précédents. Force `--iteration 4` et transmet `--cam` / `--video`.
   Active les fonctions cumulées 1 à 4; aucune modification des algorithmes.
@@ -179,11 +222,91 @@ La validation visuelle du nouveau mode à la webcam reste à faire par l'utilisa
   - Chaîne complète image → volume : 65,2 % (attendu 68 %), à cause du biais de f.
 - **Reste à faire (webcam) :** noter le bruit de Z avec le poing immobile; si le volume tremble, augmenter `volume_dead_zone_cm` (1,5 cm → 9/100 à σ = 1,5 cm).
 
-**Itération 5 (suivante) :** anti-retour de 2,5 s, réarmement complet (après un balayage, seulement si la main se ferme), tolérance aux images sans main, CSV des raisons (`results/events_log.csv`).
+**Itération 5 (implémentée) :**
+- `GestureEngine(..., robust=True)` (défaut; `robust=False` = itérations 3-4 à l'identique).
+- Anti-retour (`antireturn_s=2,5`) : un balayage de sens opposé est bloqué s'il commence
+  du côté de l'arrivée par rapport au **point de départ** du balayage précédent. Le blocage
+  vide la trajectoire et est mémorisé dans `engine.suppressed` (type `seek_bloque`, avec raison).
+  `reset()` (main sortie ou hors zone) réarme les deux sens.
+- Réarmement : après un balayage, verrou de type « balayage » levé seulement par un poing;
+  après une pause, poing ou déplacement > 45 px (inchangé).
+- Tolérance : `missing_tolerance_frames=2` images sans main ignorées; à la 3e, `reset()`
+  (le test « main perdue 3 images → rien » de l'itération 3 reste vrai).
+- `EventLogger` : `results/events_log.csv` (`session, t_s, type, valeur, raison`), en ajout.
+- `tests/test_iter5_robuste.py` (8 scénarios × 100, avant → après) : balayage + retour naturel
+  23 → 100 (77 faux retours → 0); balayage puis main ouverte immobile sans pause 0 → 100;
+  main ouverte avec 2 images manquantes → pause 0 → 100; les 5 autres scénarios 100 → 100.
+  Tests 1 à 4 : chiffres identiques.
+
+**Itération 6 (implémentée) :**
+- `g3d/geometry.py` : DLT normalisée (Hartley) et triangulation DLT, écrites à la main.
+- `g3d/zone.py` : `ControlZone.from_clicks` (clics sur l'affichage miroir, ordre HG, HD, BD, BG
+  à l'écran), `contains(x, y, z, use_z)`, `to_sheet` (cm), `data/zone.json`.
+  `ZoneConfig.orientation="paysage"` (le mode `auto` se trompe 43/200 fois en forte perspective).
+- `main.py` : touche `z` (cliquer), `x` (effacer), `Échap`; feuille verte / rouge; `Sample.in_zone`.
+- `tests/test_iter6_zone.py` : DLT = OpenCV (3·10⁻⁵ mm sans bruit, 0,35 mm à σ = 1 px car OpenCV
+  raffine par LM); position sur la feuille σ = 1 px → 0,10 cm, 3 px → 0,29 cm; contains
+  4000/4000; gestes hors zone 0 commande 100/100; sortie de zone réarme l'anti-retour 100/100.
+- **Corrigé :** le 4e clic arrivant pendant `waitKey` faisait afficher un 5e coin
+  (`IndexError`) → la zone est finalisée au début de l'image suivante.
+
+**Itération 7 (implémentée) :**
+- `g3d/calibration.py` (coins sous-pixel, `calibrate_mono`, `calibrate_stereo`, npz),
+  `scripts/capture_calibration.py` (espace = garder, `c` = étalonner, `--from-images`).
+- `main.py --iteration 7` : f = fx de `data/mono.npz` (mise à l'échelle de la largeur);
+  touche `c` = R étalonné avec le poing à 50 cm (médiane de 15 rayons) → `data/palm.json`.
+- `tests/test_iter7_etalonnage.py` (damiers rendus avec K, distorsion connus, f = 600) :
+  RMS 0,021 px, fx +0,006 % (difficile : 0,092 px, −0,08 %); Z mono 30 → 80 cm :
+  erreur moyenne 12,4 cm (f = 500, R = 4) → 0,32 cm; chaîne volume 61,7 % → 67,2 % (attendu 68).
+
+**Itération 8 (implémentée) :**
+- `StereoRig` (`g3d/depth.py`) : points non distordus → coordonnées normalisées → DLT.
+  `main.py --cam2 N` : 2e segmentation, Z triangulé, fenêtre « Camera 2 », zone 3D
+  (`z_min_cm=25`, `z_max_cm=90`). Sans `--cam2` ou `stereo.npz` : retour au mono.
+- `tests/test_iter8_stereo.py` : étalonnage stéréo RMS 0,023 px, base 9,998 cm (10), rotation
+  0,04°; DLT = cv2.triangulatePoints (6·10⁻¹³ cm); bruit 1 px, Z 30 → 80 cm : stéréo
+  0,17 → 1,16 cm, mono 0,29 → 2,06 cm; chaîne image → Z stéréo 0,32 cm; zone 3D 6/6;
+  volume 50 → 40 cm : stéréo 67,5 ± 0,9 %, mono 67,9 ± 1,5 %.
+
+**Itération 9 (terminée en synthétique) :** `experiments/run_all.py` (≈ 35 s) → `results/fig1`
+à `fig7` + `summary.json`; `exp_real_hands.py` ajoute `fig8` si `data/real_hands/` contient
+des masques (`scripts/record_dataset.py`, touches 0-5). Résultats : doigts nominal 98,3 %,
+difficile 87,5 % (classes 95,8 %); étalonnage RMS 0,021 px; zone 0,11 / 0,34 cm (σ = 1 / 3 px);
+Z stéréo 0,17 → 1,16 cm, mono 0,29 → 2,06 cm; faux retours 77 → 0; volume stéréo
+67,9 ± 0,8 %, mono 68,0 ± 1,2 %. Données synthétiques partagées : `experiments/synth.py`.
 
 ---
 
 ## 6. Problèmes déjà résolus (à ne pas répéter)
+
+- Feuille ajoutée entre les doigts alors qu'Avant-plan était propre : suppression
+  de la récupération globale des composantes de peau. Intersection locale avec
+  avant-plan couleur dilaté de 2 px, sans fermeture après intersection. Test
+  `test_feuille.py`; les pixels de main indiscernables du fond restent une limite.
+- Doigts proches fusionnés par le nettoyage : noyau 3 × 3 et une fermeture au lieu
+  de 5 × 5 et deux. Tests sur espaces de 4–8 px; pas de défloutage logiciel.
+- Une image à zéro doigt embrayait immédiatement le volume et effaçait le balayage :
+  confirmation temporelle et stabilité xy avant prise, modes 4–8. Test dédié
+  `test_balayage_volume.py`; les faux zéros persistants restent possibles.
+- Main tronquée devant un mur de luminosité semblable : fond anciennement en gris
+  et intersection peau/avant-plan pixel par pixel. Comparaison couleur et conservation
+  des composantes entières validées par l'avant-plan; tests `test_segmentation_fond.py`.
+- Visage + cou + chandail acceptés parce qu'ils touchent le bas : limites d'aire et
+  d'étendue au bord avant sélection/protection du fond. Rejet des 24 torses synthétiques;
+  ce filtre ne remplace pas une reconnaissance anatomique (validation webcam à faire).
+
+- Retour naturel après un balayage compté comme balayage inverse (77/100 essais) :
+  anti-retour de 2,5 s relatif au point de départ du balayage précédent → 0/100.
+- Pause parasite après un balayage main ouverte (100/100) : verrou « balayage » levé
+  seulement par le poing → 0/100.
+- Une image sans main (masque qui clignote) annulait une pause en cours : tolérance de
+  2 images → 100/100 pauses.
+- Orientation automatique de la feuille fausse en forte perspective (43/200) :
+  orientation fixée dans `ZoneConfig` (paysage par défaut).
+- `IndexError` à la fin des 4 clics de zone (clic reçu pendant `waitKey`) : zone
+  finalisée au début de l'image suivante.
+- `tests/iteration1.py` ne trouvait pas `main` hors PyCharm : ajout du `sys.path` comme
+  dans les autres lanceurs.
 
 - Lancement séparé de l'itération 4 dans PyCharm : ajout de `tests/iteration4.py`,
   utilisant le mode complet existant, sans copie des calculs ou des réglages.

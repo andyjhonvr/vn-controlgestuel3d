@@ -6,10 +6,22 @@ pip install -r requirements.txt
 python3 main.py                    # vidéo synthétique
 python3 main.py --video film.mp4   # vraie vidéo (--cam 1 pour l'iPhone)
 
-# Tests synthétiques
+# Tests synthétiques (sans caméra)
+python3 tests/test_iter1_visage.py
+python3 tests/test_segmentation_fond.py  # couleur, main tronquée, visage relié au chandail
+python3 tests/test_feuille.py           # fond de couleur peau connecté à deux doigts
+python3 tests/test_balayage_volume.py    # espaces entre doigts et faux poings pendant un balayage
 python3 tests/test_iter2_doigts.py
 python3 tests/test_iter3_gestes.py
 python3 tests/test_iter4_volume.py
+python3 tests/test_iter5_robuste.py
+python3 tests/test_iter6_zone.py
+python3 tests/test_iter7_etalonnage.py
+python3 tests/test_iter8_stereo.py
+python3 tests/test_main_simule.py      # main.py, modes 1 à 8, caméra simulée
+
+# Expériences : 7 figures + results/summary.json (~1 min)
+python3 experiments/run_all.py
 
 Allow acces to camera
 
@@ -34,10 +46,66 @@ un bord autorise et ne rejoint pas la main ou l'avant-bras.
 
 Regression synthetique : `python -X utf8 tests/test_iter1_visage.py`.
 
+## Correction de la détection — novembre 2026
+
+Le fond est comparé **en couleur** : une main de même luminosité que le mur peut
+rester visible. Depuis la correction du 8 novembre, le masque final conserve la
+peau seulement dans l'avant-plan, avec une marge locale de 2 pixels
+(`fg_recovery_px`). La récupération de composantes entières a été supprimée :
+elle ajoutait la feuille à la main lorsqu'elles étaient connectées dans Peau.
+Il n'y a pas de fermeture après l'intersection, pour préserver les creux entre
+les doigts. Les seuils de couleur restent inchangés, sans exclusion générale du blanc.
+Une région de main de couleur exactement identique au fond ne peut plus être
+reconstituée : changer l'éclairage ou le fond dans ce cas.
+
+Une silhouette qui occupe plus de 40 % de l'image ou s'étend sur plus de 45 %
+d'un bord d'entrée est rejetée. Cela filtre notamment un visage relié à un large
+chandail et évite de protéger cette fausse main pendant la mise à jour du fond.
+Ce n'est pas une reconnaissance anatomique : une main collée au visage ou un
+objet de couleur peau peut encore poser problème. Une main très proche de la
+caméra peut aussi dépasser les limites; reculer la main avant de changer les seuils.
+
+**Essai webcam, avant de filmer :**
+
+1. Relancer `tests/iteration1.py` avec la version corrigée.
+2. Garder le visage dans sa position habituelle, retirer la main, appuyer sur `b`
+   et attendre la fin du message d'apprentissage.
+3. Montrer la paume et les cinq doigts, avant-bras visible jusqu'au bas ou au côté.
+   La silhouette blanche doit être continue et le contour vert entourer la main.
+4. Tenir la main immobile cinq secondes, puis déplacer la main devant le mur.
+5. Retirer la main et bouger la tête : le programme doit afficher « aucune main ».
+6. Vérifier ensuite le comptage avec `tests/iteration2.py` avant les gestes.
+
+**Si cela échoue :** appuyer sur `m` pour afficher Peau / Avant-plan / Final.
+Si les doigts manquent déjà dans Peau, vérifier l'éclairage et les plages
+`cr_min`, `cr_max`, `cb_min`, `cb_max` de `g3d/config.py`. S'ils sont dans Peau
+mais toute la main manque dans Final, réapprendre le fond sans la main; au besoin,
+réduire légèrement `bg_diff_thresh` (25 → 20). Cela augmente aussi la sensibilité
+aux changements d'éclairage. Si Final est complet mais sans contour vert, vérifier
+le raccordement du bras au bord, une fusion avec le torse et les seuils
+`max_arm_border_ratio` / `max_hand_area_ratio` avant de les assouplir.
+
+Régression : `python -X utf8 tests/test_segmentation_fond.py`. Sur les scènes
+synthétiques ciblées : mains devant un fond de même luminance 0/12 → 12/12;
+torses pris pour une
+main 24/24 → 0/24; main distincte à côté du torse 0/24 → 24/24. Ces chiffres
+ne mesurent pas la précision réelle de la webcam, qui reste à vérifier.
+L'ancien test de reconstruction de doigts parfaitement identiques au fond a été
+remplacé par une vérification de non-reconstruction de cette région indiscernable.
+`test_feuille.py` vérifie 6/6 mains à deux doigts devant une feuille acceptée comme
+peau, le maintien sur 60 images et le retrait, sans récupérer de feuille à plus
+de 8 pixels de la vraie main.
+
+Pour vérifier à la webcam : fixer la feuille, retirer les mains, appuyer sur `b`,
+puis présenter deux doigts devant la feuille. Avec `m`, Final doit suivre la
+silhouette propre d'Avant-plan, même si Peau contient encore la feuille. Si une
+frange de fond subsiste, essayer `fg_recovery_px=1` (ou 0) dans `g3d/config.py`;
+une marge plus petite peut en contrepartie tronquer davantage les bords de la main.
+
 ## Filmer uniquement l'itération 1
 
-Dans PyCharm, clic droit sur `iteration1.py` puis **Run 'iteration1'**.
-En terminal : `python iteration1.py` (ou `python main.py --iteration 1`).
+Dans PyCharm, clic droit sur `tests/iteration1.py` puis **Run 'iteration1'**.
+En terminal : `python tests/iteration1.py` (ou `python main.py --iteration 1`).
 L'option `--cam 1` permet de sélectionner une autre caméra.
 
 Ce mode affiche la caméra et le masque, le contour vert, le centre et le cercle
@@ -48,7 +116,8 @@ l'avant-bras par le bas ou un côté. Vérifiez le suivi et le retour à « aucu
 après retrait. Touches : `b` fond, `d` masque, `m` diagnostic, `q` quitter.
 Si le fond est mal appris, retirez la main et appuyez sur `b`.
 
-`main.py` sans option continue de lancer les itérations 1 à 4 ensemble.
+`main.py` sans option lance toutes les fonctions (itérations 1 à 8; profondeur mono
+si aucune 2e caméra n'est donnée).
 
 ## Filmer l'itération 2 sans les commandes des itérations 3 et 4
 
@@ -90,6 +159,25 @@ l'amplitude et la vitesse du balayage. L'anti-retour reste prévu pour l'itérat
 
 ## Filmer l'itération 4 avec la profondeur et le volume
 
+**Protection contre les faux poings (6 novembre 2026) :** le nettoyage du masque
+utilise un noyau 3 × 3 et une seule fermeture, pour moins fusionner les doigts
+proches. Cela peut conserver davantage de bruit : vérifier le masque avec `m`.
+Le volume exige maintenant zéro doigt pendant 0,2 s, avec un déplacement xy
+inférieur à 4 % de la largeur (environ 26 px à 640 px). Une erreur plus courte
+n'active plus immédiatement le volume et ne supprime plus la trajectoire du
+balayage en modes 4–8. Le compteur brut peut toujours afficher zéro : il ne s'agit
+pas d'une reconstruction des doigts effacés par le flou. Le mode 3 reste sans volume.
+
+Pour tester : deux doigts bien visibles, balayage fluide droite/gauche; pas de
+ligne verte VOLUME lors d'un faux zéro bref. Puis fermer le poing, le tenir un
+court instant et l'approcher : le volume doit fonctionner. Si les doigts restent
+absents dans le masque, corriger l'éclairage/exposition. Si le volume s'active
+encore trop facilement, augmenter `fist_confirm_s` de 0,20 à 0,30 (activation
+du vrai poing retardée d'autant). Réglages dans `g3d/config.py` : `morph_kernel`,
+`morph_close_iterations`, `fist_confirm_s`, `fist_confirm_motion_ratio`.
+Tests ciblés : espaces de 4–8 px conservés 0/5 → 5/5; 8/8 balayages avec un ou
+deux faux zéros et vrai volume vérifiés. Validation webcam restant à faire.
+
 Dans PyCharm, clic droit sur `tests/iteration4.py`, puis **Run 'iteration4'**.
 En terminal depuis la racine du projet : `python tests/iteration4.py`, ou
 `python main.py --iteration 4`. Les options `--cam N` et `--video fichier.mp4`
@@ -114,3 +202,43 @@ Si le réglage échoue, vérifier d'abord `POING`, le masque (`m`) et la continu
 bras. Si le volume bouge au repos, noter les variations de Z pour le protocole de
 bruit avant de modifier les seuils. Test automatique :
 `python -X utf8 tests/test_iter4_volume.py`.
+
+
+## Filmer l'itération 5 : gestes robustes
+
+`python tests/iteration5.py` (ou `python main.py --iteration 5`). Mêmes gestes qu'à
+l'itération 4, avec : **anti-retour** (le retour naturel de la main après un balayage
+est bloqué 2,5 s et affiché `seek_bloque` dans le terminal), **réarmement** (après un
+balayage, la pause n'est possible qu'après avoir fermé le poing), **tolérance** de 2
+images sans main, et **journal CSV** `results/events_log.csv` (une ligne par commande
+ou blocage, avec la raison chiffrée).
+
+Pour tester : balayer vers la droite puis ramener la main normalement → un seul +10 s.
+Après un balayage, laisser la main ouverte immobile → pas de pause; fermer le poing puis
+rouvrir → pause. Sortir la main du champ réarme les deux sens.
+
+## Filmer l'itération 6 : zone de contrôle
+
+`python tests/iteration6.py`. Appuyer sur `z` et cliquer les 4 coins de la feuille lettre
+(haut-gauche, haut-droit, bas-droit, bas-gauche, tels que vus à l'écran). La feuille est
+dessinée en vert (rouge si la main est hors zone) et la position de la main sur la feuille
+est affichée en cm. Hors de la feuille : `HORS ZONE`, aucune commande. `x` efface la zone.
+
+## Filmer l'itération 7 : étalonnage
+
+1. `python scripts/capture_calibration.py --square 2.5` : 15-20 vues du damier (espace),
+   puis `c` → `data/mono.npz`, RMS < 0,5 px.
+2. `python tests/iteration7.py` : la ligne bleue affiche `f=… px (etalonnee)`. Poing à 50 cm,
+   touche `c` → R étalonné (`data/palm.json`). Z est alors en vrais centimètres.
+
+## Filmer l'itération 8 : stéréo
+
+1. `python scripts/capture_calibration.py --cam 0 --cam2 1 --square 2.5` → `data/stereo.npz`.
+2. `python tests/iteration8.py` (2e caméra = 1 par défaut, sinon `--cam2 N`).
+   Z triangulé (`Z st`), fenêtre `Camera 2`, zone 3D (feuille + Z entre 25 et 90 cm).
+
+## Itération 9 : expériences et figures
+
+`python tests/iteration9.py` (ou `python experiments/run_all.py`) régénère
+`results/fig1` à `fig7` et `results/summary.json`. Avec des vraies mains enregistrées par
+`python scripts/record_dataset.py` (touches 0-5), une 8e figure est ajoutée.
