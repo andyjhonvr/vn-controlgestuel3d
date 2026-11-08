@@ -11,11 +11,15 @@ class SegmentationConfig:
     # Soustraction d'arrière-plan par moyenne glissante
     bg_alpha: float = 0.02              # taux d'oubli du fond (0 = figé, 1 = remplacé à chaque image)
     bg_warmup_frames: int = 30          # ~1 s d'apprentissage du fond au démarrage et après 'b'
-    bg_diff_thresh: int = 25            # écart minimal en niveaux de gris pour être « avant-plan »
+    bg_diff_thresh: int = 25            # écart minimal sur au moins un canal BGR
+    fg_recovery_px: int = 2            # marge locale autour de l'avant-plan, jamais toute la composante
     use_background: bool = True
     # Morphologie et filtrage du contour
-    morph_kernel: int = 5               # taille du noyau elliptique (px)
+    morph_kernel: int = 3               # noyau plus fin pour préserver les espaces entre doigts
+    morph_close_iterations: int = 1     # éviter de fusionner des doigts proches
     min_hand_area_ratio: float = 0.01   # aire minimale de la main / aire de l'image
+    max_hand_area_ratio: float = 0.40   # rejeter les silhouettes envahissant l'image (torse, fond)
+    max_arm_border_ratio: float = 0.45  # largeur occupée sur chaque bord / longueur de ce bord
     # La silhouette DOIT toucher le bord gauche, droit ou bas via l'avant-bras.
     # Une tache flottante (ex. visage en mouvement) n'est jamais une main candidate.
     track_max_jump_ratio: float = 0.25  # distance max. ancien centre / nouveau contour, rapportée à la largeur
@@ -56,15 +60,24 @@ class GestureConfig:
     open_min_fingers: int = 4
     still_max_px: float = 15.0
     still_duration_s: float = 0.8
-    # Verrou simple (le réarmement complet arrive à l'itération 5) : après une pause,
-    # la main doit se fermer ou bouger de plus de 45 px avant une nouvelle pause.
+    # Réarmement de la pause : après une pause, la main doit se fermer ou bouger de plus
+    # de 45 px; après un balayage (itération 5), seulement se fermer (poing).
     pause_rearm_px: float = 45.0
+    # Itération 5 : anti-retour. Pendant 2,5 s après un balayage, le sens opposé est
+    # bloqué s'il part du côté où le balayage précédent s'est terminé (par rapport à son
+    # point de départ). Sortir de la zone (ou perdre la main) réarme les deux sens.
+    antireturn_s: float = 2.5
+    # Itération 5 : jusqu'à 2 images consécutives sans main sont ignorées (masque qui
+    # clignote); au-delà, la main est considérée sortie → reset().
+    missing_tolerance_frames: int = 2
     # Volume : poing = embrayage; volume = V₀ + gain × (Z₀ − Z), moins la zone morte
     volume_gain_pct_per_cm: float = 2.0
     volume_median_n: int = 9              # médiane glissante sur Z
     volume_dead_zone_cm: float = 1.0      # on retranche 1 cm de |Z₀ − Z| (continu)
     volume_hysteresis_pct: float = 2.0    # on n'applique un changement que s'il est ≥ 2 %
     fist_tolerance_frames: int = 5        # images « pas poing » tolérées avant de lâcher
+    fist_confirm_s: float = 0.20         # zéro doigt continu avant d'activer le volume
+    fist_confirm_motion_ratio: float = 0.04  # déplacement xy max depuis le début / largeur image
     volume_initial_pct: float = 50.0
 
 
@@ -74,6 +87,32 @@ class DepthConfig:
     # f provisoire (webcam 640 px, champ horizontal ≈ 65°) : remplacée à l'itération 7.
     focal_px: float = 500.0
     palm_radius_cm: float = 4.0           # rayon du disque inscrit dans la paume / le poing
+    # Itération 7 : étalonnage en un point du rayon réel R (touche c, poing à 50 cm)
+    palm_calib_distance_cm: float = 50.0
+    palm_calib_frames: int = 15           # médiane du rayon sur 15 images
+
+
+@dataclass
+class ZoneConfig:
+    # Itération 6 : feuille lettre (8,5 × 11 po)
+    sheet_long_cm: float = 27.94
+    sheet_short_cm: float = 21.59
+    # "paysage" : le grand côté est horizontal à l'écran; "portrait"; ou "auto" (déduit des
+    # longueurs cliquées, peu fiable si la feuille est vue très en biais)
+    orientation: str = "paysage"
+    margin_cm: float = 0.0                # tolérance autour de la feuille
+    # Itération 8 (stéréo) : la zone devient 3D, Z doit être dans [z_min, z_max]
+    z_min_cm: float = 25.0
+    z_max_cm: float = 90.0
+
+
+@dataclass
+class CalibrationConfig:
+    # Itération 7 : damier imprimé, nombre de coins INTÉRIEURS (colonnes, lignes)
+    pattern: tuple = (9, 6)
+    square_cm: float = 2.5                # côté d'une case, mesuré à la règle
+    min_views: int = 10                   # images minimales pour étalonner
+    max_rms_px: float = 0.5               # critère de réussite
 
 
 @dataclass
@@ -91,3 +130,5 @@ class Config:
     gestures: GestureConfig = field(default_factory=GestureConfig)
     depth: DepthConfig = field(default_factory=DepthConfig)
     player: PlayerConfig = field(default_factory=PlayerConfig)
+    zone: ZoneConfig = field(default_factory=ZoneConfig)
+    calib: CalibrationConfig = field(default_factory=CalibrationConfig)

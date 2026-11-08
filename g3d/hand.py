@@ -38,7 +38,7 @@ class HandSegmenter:
         self.warmup_left = self.cfg.bg_warmup_frames
         self.last_skin: Optional[np.ndarray] = None   # masques intermédiaires (diagnostic)
         self.last_fg: Optional[np.ndarray] = None
-        self._last_gray: Optional[np.ndarray] = None
+        self._last_frame: Optional[np.ndarray] = None
         k = self.cfg.morph_kernel
         self._kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
@@ -50,23 +50,31 @@ class HandSegmenter:
     def reset_background(self) -> None:
         """Relance l'apprentissage du fond (touche b). La main doit être hors du champ."""
         self.warmup_left = self.cfg.bg_warmup_frames
+        self.background = None
 
-    def _learn(self, gray: np.ndarray) -> None:
-        self.background = gray.astype(np.float32)
+    def _learn(self, frame: np.ndarray) -> None:
+        self.background = frame.astype(np.float32)
 
     def update_background(self, protect: Optional[np.ndarray] = None) -> None:
         """Mise à jour lente du fond partout sauf dans `protect` (la main retenue).
         À appeler après extract_hand, une fois la main choisie."""
-        if self.background is None or self._last_gray is None or self.warming_up:
+        if self.background is None or self._last_frame is None or self.warming_up:
             return
         keep = None if protect is None else cv2.bitwise_not(protect)
-        cv2.accumulateWeighted(self._last_gray.astype(np.float32), self.background,
+        cv2.accumulateWeighted(self._last_frame.astype(np.float32), self.background,
                                self.cfg.bg_alpha, mask=keep)
 
-    def _foreground_mask(self, gray: np.ndarray) -> np.ndarray:
-        diff = cv2.absdiff(gray, cv2.convertScaleAbs(self.background))
+    def _foreground_mask(self, frame: np.ndarray) -> np.ndarray:
+        # Un mur gris et une paume peuvent avoir la même luminosité, mais pas la
+        # même couleur : conserver cette différence au lieu de convertir en gris.
+        diff = cv2.absdiff(frame, cv2.convertScaleAbs(self.background)).max(axis=2)
         fg = (diff > self.cfg.bg_diff_thresh).astype(np.uint8) * 255
-        return cv2.dilate(fg, self._kernel, iterations=2)
+        radius = max(0, int(self.cfg.fg_recovery_px))
+        if radius:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                               (2 * radius + 1, 2 * radius + 1))
+            fg = cv2.dilate(fg, kernel)
+        return fg
 
     # ---------------------------------------------------------- segmentation
     def skin_mask(self, frame: np.ndarray) -> np.ndarray:
@@ -75,22 +83,30 @@ class HandSegmenter:
         return cv2.inRange(ycrcb, (0, c.cr_min, c.cb_min), (255, c.cr_max, c.cb_max))
 
     def segment(self, frame: np.ndarray) -> np.ndarray:
-        gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (5, 5), 0)
-        self._last_gray = gray
+        smooth = cv2.GaussianBlur(frame, (5, 5), 0)
+        self._last_frame = smooth
         mask = self.skin_mask(frame)
         self.last_skin, self.last_fg = mask, None
+        # Nettoyer la peau avant de tester les composantes : un pixel de bruit
+        # ne doit pas raccorder la main à un autre objet de couleur similaire.
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._kernel,
+                                iterations=self.cfg.morph_close_iterations)
         if self.cfg.use_background:
             # Apprentissage : la webcam ajuste souvent son exposition pendant la première
             # seconde; on réapprend le fond à chaque image pendant ce temps.
             if self.warming_up or self.background is None:
-                self._learn(gray)
+                self._learn(smooth)
                 self.warmup_left = max(0, self.warmup_left - 1)
                 return np.zeros_like(mask)
-            fg = self._foreground_mask(gray)
+            fg = self._foreground_mask(smooth)
             self.last_fg = fg
+            # La feuille peut passer le filtre peau et toucher la main. Ne pas
+            # reconstruire toute cette composante : seule la marge locale de
+            # _foreground_mask peut récupérer des pixels proches de la main.
+            # Aucun remplissage/fermeture après cette intersection : cela
+            # réintroduirait le fond entre les doigts.
             mask = cv2.bitwise_and(mask, fg)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._kernel, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._kernel, iterations=2)
         return mask
 
 
@@ -104,11 +120,12 @@ def _touches_arm_border(contour: np.ndarray, shape) -> bool:
 
 def _select_contour(contours, shape, prev_point, cfg: SegmentationConfig):
     min_area = cfg.min_hand_area_ratio * shape[0] * shape[1]
+    max_area = cfg.max_hand_area_ratio * shape[0] * shape[1]
     # La couleur et le mouvement ne distinguent pas une main d'un visage.
     # Exiger l'entree du bras a CHAQUE image, y compris pendant le suivi.
     # Sans cette preuve, ne transmettre aucune observation au moteur de gestes.
-    cands = [c for c in contours if cv2.contourArea(c) >= min_area
-             and _touches_arm_border(c, shape)]
+    cands = [c for c in contours if min_area <= cv2.contourArea(c) <= max_area
+             and _touches_arm_border(c, shape) and _plausible_arm_border(c, shape, cfg)]
     if not cands:
         return None
     if prev_point is None:
@@ -121,6 +138,20 @@ def _select_contour(contours, shape, prev_point, cfg: SegmentationConfig):
     best = min(cands, key=dist_to_prev)
     max_jump = cfg.track_max_jump_ratio * shape[1]
     return best if dist_to_prev(best) <= max_jump else None
+
+
+def _plausible_arm_border(contour, shape, cfg: SegmentationConfig) -> bool:
+    """Écarter notamment visage + cou + chandail reliés à une large base.
+
+    Ceci reste un filtre géométrique, pas une reconnaissance anatomique. Une
+    main fusionnée au torse est rejetée plutôt que protégée dans le fond.
+    """
+    h, w = shape
+    x, y = contour.reshape(-1, 2).T
+    for values, length in ((y[x <= 1], h), (y[x >= w - 2], h), (x[y >= h - 2], w)):
+        if values.size and int(values.max()) - int(values.min()) + 1 > cfg.max_arm_border_ratio * length:
+            return False
+    return True
 
 
 # -------------------------------------------------------------- caractéristiques

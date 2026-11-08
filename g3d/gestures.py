@@ -1,21 +1,13 @@
 """Moteur de gestes : transforme une suite d'échantillons de la main en commandes.
-
-Ordre fixe des règles à chaque échantillon (voir CLAUDE.md, section 3) :
-    1. aucune main ou main hors zone → reset();
-    2. volume (commande continue, sans délai) : tant que le poing est fermé;
-    3. délai (cooldown) de 1 s après un événement discret;
-    4. balayage gauche / droite → ±10 s;
-    5. main ouverte immobile → lecture / pause (avec un verrou simple).
-
-Itérations 3 et 4. L'anti-retour, le réarmement complet et le journal CSV arrivent
-à l'itération 5. Le moteur ne lit que des échantillons horodatés : il se teste sur
-des trajectoires synthétiques, sans caméra.
 """
 from __future__ import annotations
 
+import csv
+import os
+import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, List, Optional
+from typing import Deque, List, Optional, Tuple
 
 import numpy as np
 
@@ -34,7 +26,7 @@ class Sample:
 
 @dataclass
 class Event:
-    kind: str                        # "seek", "play_pause" ou "volume"
+    kind: str                        # "seek", "play_pause", "volume" (ou "seek_bloque", journal)
     t: float
     value: Optional[float] = None    # seek : ±secondes; volume : nouveau volume (%)
     reason: str = ""                 # raison chiffrée, affichée et journalisée
@@ -45,23 +37,32 @@ class Event:
 
 class GestureEngine:
     def __init__(self, frame_width: int, cfg: GestureConfig | None = None,
-                 *, volume_enabled: bool = True):
+                 *, volume_enabled: bool = True, robust: bool = True):
         self.cfg = cfg or GestureConfig()
         self.volume_enabled = volume_enabled
+        # robust=False désactive les ajouts de l'itération 5; la confirmation
+        # du poing protège tous les modes qui utilisent le volume.
+        self.robust = robust
         self.width = frame_width
         self.volume = self.cfg.volume_initial_pct
         self.cooldown_until = -np.inf
         self.history: Deque[Sample] = deque()
         # Volume (poing = embrayage)
         self.gripping = False
+        self._fist_start: Optional[Sample] = None
         self._z_buf: Deque[float] = deque(maxlen=self.cfg.volume_median_n)
         self._z0: Optional[float] = None
         self._v0 = self.volume
         self._miss = 0
         self.z_filtered: Optional[float] = None     # dernière médiane (affichage)
-        # Verrou de la pause
+        # Verrou de la pause : "pause" (poing ou déplacement) ou "balayage" (poing seulement)
         self._pause_latched = False
+        self._latch_kind = "pause"
         self._latch_pos = (0.0, 0.0)
+        # Itération 5 : anti-retour et tolérance aux images sans main
+        self._last_swipe: Optional[Tuple[float, float, float, float]] = None  # t, signe dx brut, x départ, x arrivée
+        self._missing = 0
+        self.suppressed: Deque[Event] = deque(maxlen=100)   # balayages bloqués (journal)
 
     # ------------------------------------------------------------------ état
     def reset(self) -> None:
@@ -70,9 +71,12 @@ class GestureEngine:
         self.history.clear()
         self._release()
         self._pause_latched = False
+        self._last_swipe = None                           # sortir de la zone réarme les deux sens
+        self._missing = 0
 
     def _release(self) -> None:
         self.gripping = False
+        self._fist_start = None
         self._z_buf.clear()
         self._z0 = None
         self._miss = 0
@@ -81,9 +85,15 @@ class GestureEngine:
     # ---------------------------------------------------------------- boucle
     def update(self, s: Optional[Sample]) -> Optional[Event]:
         # 1. aucune main ou main hors zone
+        if s is None and self.robust and self._missing < self.cfg.missing_tolerance_frames:
+            if not self.gripping:
+                self._release()  # une absence ne confirme pas un poing en attente
+            self._missing += 1                            # image manquée tolérée : on attend
+            return None
         if s is None or not s.in_zone:
             self.reset()
             return None
+        self._missing = 0
 
         if self._pause_latched:
             self._update_latch(s)                         # le poing réarme aussi la pause
@@ -94,6 +104,10 @@ class GestureEngine:
             if self.gripping:
                 self.history.clear()
                 return ev
+            if s.fingers == 0:
+                # Poing incertain : suspendre les commandes sans effacer le
+                # balayage précédent pendant une brève erreur de comptage.
+                return None
         elif s.fingers == 0:
             # Itération 3 : le poing réarme la pause, sans commande ni trajectoire.
             self.history.clear()
@@ -112,6 +126,9 @@ class GestureEngine:
         if ev is not None:
             self.cooldown_until = s.t + self.cfg.cooldown_s
             self.history.clear()
+            if ev.kind == "seek" and self.robust:
+                # la main ouverte immobile en fin de balayage ne doit pas mettre en pause
+                self._pause_latched, self._latch_kind = True, "balayage"
         return ev
 
     def _push(self, s: Sample) -> None:
@@ -126,9 +143,21 @@ class GestureEngine:
         c = self.cfg
         fist = s.fingers == 0
         if not self.gripping:
-            if not fist:
+            if not fist or s.z_cm is None:
+                self._release()
+                return None
+            start = self._fist_start
+            if (start is None or s.t < start.t
+                    or np.hypot(s.x - start.x, s.y - start.y)
+                    > c.fist_confirm_motion_ratio * self.width):
+                self._release()
+                self._fist_start = s
+            self._z_buf.append(s.z_cm)
+            if s.t - self._fist_start.t < c.fist_confirm_s:
                 return None
             self.gripping, self._v0, self._miss = True, self.volume, 0
+            # Ajouté une seule fois dans le traitement commun ci-dessous.
+            self._z_buf.pop()
         elif not fist:
             # tolérance : quelques images mal comptées ne lâchent pas le poing
             self._miss += 1
@@ -174,21 +203,45 @@ class GestureEngine:
                 screen_dx = -dx if c.mirror else dx       # sens vu par l'utilisateur
                 step = c.seek_step_s if screen_dx > 0 else -c.seek_step_s
                 side = "droite" if screen_dx > 0 else "gauche"
+                if self.robust:
+                    why = self._antireturn(s.t, old.x, dx)
+                    if why:
+                        self.suppressed.append(Event("seek_bloque", s.t, step,
+                                                     f"balayage {side} bloqué : {why}"))
+                        self.history.clear()              # ce retour est consommé
+                        return None
+                    self._last_swipe = (s.t, float(np.sign(dx)), old.x, s.x)
                 return Event("seek", s.t, step,
                              f"balayage {side} : |dx|={abs(dx):.0f} px ({100 * abs(dx) / self.width:.0f} % "
                              f"≥ {100 * c.swipe_min_dx_ratio:.0f} %) en {1000 * dt:.0f} ms, "
                              f"|dy|={abs(dy):.0f} px → {step:+.0f} s")
         return None
 
+    def _antireturn(self, t: float, x_start: float, dx: float) -> str:
+        """Raison du blocage si ce balayage est le retour naturel du précédent, sinon ""."""
+        if self._last_swipe is None:
+            return ""
+        t_prev, sgn, xa, xb = self._last_swipe
+        if t - t_prev > self.cfg.antireturn_s or np.sign(dx) == sgn:
+            return ""
+        if (x_start - xa) * sgn <= 0:
+            return ""                                     # part de l'autre côté du départ précédent
+        return (f"anti-retour, {1000 * (t - t_prev):.0f} ms ≤ {1000 * self.cfg.antireturn_s:.0f} ms "
+                f"après le balayage précédent ({xa:.0f} → {xb:.0f} px), départ à {x_start:.0f} px "
+                f"du côté de son arrivée")
+
     # ----------------------------------------------------------------- pause
     def _update_latch(self, s: Sample) -> None:
+        if s.fingers == 0:
+            self._pause_latched = False
+            return
         moved = np.hypot(s.x - self._latch_pos[0], s.y - self._latch_pos[1])
-        if s.fingers == 0 or moved > self.cfg.pause_rearm_px:
+        if self._latch_kind == "pause" and moved > self.cfg.pause_rearm_px:
             self._pause_latched = False
 
     def _pause(self, s: Sample) -> Optional[Event]:
         c = self.cfg
-        if self._pause_latched or s.fingers < c.open_min_fingers:
+        if self._pause_latched or s.fingers < c.open_min_fingers or not self.history:
             return None
         t0 = s.t - c.still_duration_s
         if self.history[0].t > t0:
@@ -200,8 +253,33 @@ class GestureEngine:
         disp = float(np.max(np.hypot(*(pts - np.median(pts, axis=0)).T)))
         if disp > c.still_max_px:
             return None
-        self._pause_latched = True
+        self._pause_latched, self._latch_kind = True, "pause"
         self._latch_pos = (s.x, s.y)
         return Event("play_pause", s.t, None,
                      f"main ouverte ({s.fingers} doigts ≥ {c.open_min_fingers}) immobile "
                      f"{1000 * (s.t - win[0].t):.0f} ms, déplacement max {disp:.1f} px ≤ {c.still_max_px:.0f} px")
+
+
+class EventLogger:
+    """Journal CSV des événements et de leur raison chiffrée (results/events_log.csv).
+    Le fichier est complété à chaque lancement; la colonne `session` les distingue."""
+
+    HEADER = ["session", "t_s", "type", "valeur", "raison"]
+
+    def __init__(self, path: str = os.path.join("results", "events_log.csv")):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        new = not os.path.exists(path) or os.path.getsize(path) == 0
+        self.path = path
+        self.session = time.strftime("%Y-%m-%d %H:%M:%S")
+        self._f = open(path, "a", newline="", encoding="utf-8")
+        self._w = csv.writer(self._f)
+        if new:
+            self._w.writerow(self.HEADER)
+
+    def log(self, ev: Event) -> None:
+        value = "" if ev.value is None else f"{ev.value:g}"
+        self._w.writerow([self.session, f"{ev.t:.3f}", ev.kind, value, ev.reason])
+        self._f.flush()
+
+    def close(self) -> None:
+        self._f.close()
